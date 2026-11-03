@@ -1,4 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { DataForSeoRequiredBadge } from "@/client/components/ProviderRequiredBadge";
 import { AiResearchSetupGate } from "@/client/features/ai-visibility/AiResearchSetupGate";
 import {
   aiResearchSetupQueryOptions,
@@ -25,6 +26,7 @@ function AiVisibilityLayout() {
   return (
     <div className="overflow-auto px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-8">
       <div className="mx-auto max-w-7xl space-y-5" key={projectId}>
+        <DataForSeoRequiredBadge />
         <ProjectWebsiteGate projectId={projectId}>
           <AiResearchSetupGate projectId={projectId}>
             <Outlet />

@@ -19,6 +19,19 @@ services:
       - OPENSEO_TELEMETRY_DISABLED=${OPENSEO_TELEMETRY_DISABLED:-}
       - DO_NOT_TRACK=${DO_NOT_TRACK:-}
       - DATAFORSEO_API_KEY=${DATAFORSEO_API_KEY}
+      # Optional: alternative SEO providers (rank tracking and volumes
+      # without DataForSEO). env_file already forwards every .env value;
+      # these explicit entries keep the provider surface discoverable next
+      # to DATAFORSEO_API_KEY.
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - YANDEX_SEARCH_API_KEY=${YANDEX_SEARCH_API_KEY:-}
+      - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID:-}
+      - BRIGHTDATA_API_TOKEN=${BRIGHTDATA_API_TOKEN:-}
+      - BRIGHTDATA_SERP_ZONE=${BRIGHTDATA_SERP_ZONE:-}
+      # Optional: keyword volumes from the operator's own Google Ads API
+      # (BYO; reuses GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET below).
+      - GOOGLE_ADS_CUSTOMER_ID=${GOOGLE_ADS_CUSTOMER_ID:-}
+      - GOOGLE_ADS_REFRESH_TOKEN=${GOOGLE_ADS_REFRESH_TOKEN:-}
       # Optional: AI features (the SAM agent). Without this the setup
       # gate in the app asks for the key, but nothing here would forward it.
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
@@ -27,8 +40,11 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-}
+      # Optional: Yandex Webmaster (a Yandex ID OAuth app; unrelated to
+      # YANDEX_SEARCH_API_KEY above). See docs/SELF_HOSTING_YANDEX_WEBMASTER.md
+      - YANDEX_OAUTH_CLIENT_ID=${YANDEX_OAUTH_CLIENT_ID:-}
+      - YANDEX_OAUTH_CLIENT_SECRET=${YANDEX_OAUTH_CLIENT_SECRET:-}
       # Optional: AI features (SAM, the in-app SEO agent)
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-}
       - VITE_SHOW_DEVTOOLS=false
     ports:

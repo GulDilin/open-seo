@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `account_yandex_grant_owner_idx` ON `account` (`user_id`,`provider_id`,`account_id`) WHERE "account"."provider_id" = 'yandex-webmaster';

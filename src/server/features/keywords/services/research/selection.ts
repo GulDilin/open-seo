@@ -7,7 +7,11 @@ export type KeywordMode = "auto" | KeywordSource;
  * a mode (it's the automatic source for countries Labs doesn't support), and
  * "blended" is auto mode's suggestions + ideas mix.
  */
-export type ResearchSource = KeywordSource | "google_ads" | "blended";
+export type ResearchSource =
+  | KeywordSource
+  | "google_ads"
+  | "wordstat"
+  | "blended";
 
 export const MIN_NON_SEED_FOR_AUTO = 5;
 

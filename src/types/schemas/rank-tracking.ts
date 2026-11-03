@@ -2,6 +2,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import { z } from "zod";
 import { rankTrackingConfigs } from "@/db/schema";
 import { isSupportedLanguageCode } from "@/shared/keyword-locations";
+import { searchEngineField } from "@/shared/search-engines";
 import { MAX_TRACKED_KEYWORD_LENGTH } from "@/shared/rank-tracking";
 import { comparePeriodSchema } from "@/types/schemas/rank-tracking-search";
 import { domainField } from "@/types/schemas/domain";
@@ -67,12 +68,23 @@ export const getConfigsSchema = z.object({
   projectId: z.string().uuid(),
 });
 
+export const getPanelKeywordSuggestionsSchema = z.object({
+  projectId: z.string().uuid(),
+  // Restricts suggestions to panels whose site covers this domain.
+  domain: domainField.optional(),
+});
+
 export const createConfigSchema = z.object({
   projectId: z.string().uuid(),
   domain: domainField,
   locationCode: z.number().int().positive().optional(),
   languageCode: languageCodeField.optional(),
   locationName: z.string().min(1).max(200).optional(),
+  // Engine choice at create only — changing engines would orphan the position
+  // history's meaning, so updates never carry it (a different engine is a new
+  // tracker). Availability per market is checked in the service against the
+  // resolved market, not here, because locationCode defaults live there.
+  searchEngine: searchEngineField.optional(),
   devices: devicesEnum.optional(),
   serpDepth: z.number().int().min(10).max(100).multipleOf(10),
   scheduleInterval: scheduleEnum.optional(),

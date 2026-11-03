@@ -5,7 +5,14 @@ import {
 } from "@/server/lib/dataforseo/google-ads";
 import type { KeywordOverviewItem } from "@/server/lib/dataforseo/labs";
 import type { CreditFeature } from "@/shared/billing-credit-features";
-import { getKeywordDataProvider } from "@/shared/keyword-locations";
+import {
+  getIsoCountryCode,
+  getKeywordDataProvider,
+} from "@/shared/keyword-locations";
+import { getSeoProviderStatuses } from "@/server/lib/seo-providers/providers";
+import { googleAdsVolumesProvider } from "@/server/lib/seo-providers/google-ads/volumes";
+import { wordstatProvider } from "@/server/lib/seo-providers/yandex/wordstat";
+import { AppError } from "@/server/lib/errors";
 import type { MonthlySearch } from "@/types/keywords";
 
 type DataforseoClient = ReturnType<typeof createDataforseoClient>;
@@ -130,8 +137,68 @@ export async function fetchKeywordMetricsForList(
     locationName?: string;
   },
 ): Promise<KeywordMetricRow[]> {
-  const useGoogleAds =
-    getKeywordDataProvider(params.locationCode) === "google_ads";
+  const provider = getKeywordDataProvider(params.locationCode);
+  const statuses = await getSeoProviderStatuses();
+  // Western markets: without the incumbent's key, the operator's own Google
+  // Ads API (BYO, decisions §8) serves volumes — same Keyword Planner
+  // numbers the incumbent resold, at Google's own buckets.
+  if (provider === "labs" || provider === "google_ads") {
+    if (!statuses.dataforseo && statuses.googleads) {
+      const volumes = await googleAdsVolumesProvider.getVolumes(
+        params.keywords.map((keyword) => ({
+          keyword,
+          country: getIsoCountryCode(params.locationCode),
+          language: params.languageCode,
+          ...(params.locationName ? { region: params.locationName } : {}),
+        })),
+      );
+      return volumes.map((row) => ({
+        keyword: row.keyword,
+        searchVolume: row.volume,
+        cpc: row.cpc,
+        competition: row.competition,
+        competitionLevel: null,
+        keywordDifficulty: row.difficulty,
+        intent: null,
+        monthlySearches: row.monthly ?? [],
+      }));
+    }
+  }
+  // Russia is served by Wordstat: volume from the exact-phrase row, the rest
+  // honestly null (Wordstat has no cpc/competition/difficulty). China has no
+  // source at all and gets explicit no-data rows.
+  if (provider === "wordstat") {
+    // Fail with the missing credentials named before any call — the raw
+    // Yandex 401 would read like an outage.
+    if (!statuses.yandex) {
+      throw new AppError(
+        "UPSTREAM_UNAVAILABLE",
+        "Russia keyword research needs Yandex Search API credentials (YANDEX_SEARCH_API_KEY + YANDEX_FOLDER_ID)",
+      );
+    }
+    const volumes = await wordstatProvider.getVolumes(
+      params.keywords.map((keyword) => ({
+        keyword,
+        country: getIsoCountryCode(params.locationCode),
+        language: params.languageCode,
+        ...(params.locationName ? { region: params.locationName } : {}),
+      })),
+    );
+    return volumes.map((row) => ({
+      keyword: row.keyword,
+      searchVolume: row.volume,
+      cpc: row.cpc,
+      competition: row.competition,
+      competitionLevel: null,
+      keywordDifficulty: row.difficulty,
+      intent: null,
+      monthlySearches: [],
+    }));
+  }
+  if (provider === "none") {
+    return params.keywords.map(nullMetricRow);
+  }
+  const useGoogleAds = provider === "google_ads";
   const rows: KeywordMetricRow[] = [];
 
   for (let i = 0; i < params.keywords.length; i += KEYWORD_METRICS_BATCH_SIZE) {

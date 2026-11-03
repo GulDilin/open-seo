@@ -50,6 +50,8 @@ Copy the template and fill in the required values:
 cp deploy/.env.selfhost.example .env.selfhost
 ```
 
+Optional alternative SEO providers are listed in the template with comments — `SERPER_API_KEY` (Google), `YANDEX_SEARCH_API_KEY` + `YANDEX_FOLDER_ID` (Yandex), `BRIGHTDATA_API_TOKEN` (+ optional `BRIGHTDATA_SERP_ZONE`) for Baidu/Bing, and `GOOGLE_ADS_CUSTOMER_ID` + `GOOGLE_ADS_REFRESH_TOKEN` for keyword volumes from your own Google Ads account. Unset ones simply show as "not configured" in preflight.
+
 ## 4) Deploy
 
 ```bash

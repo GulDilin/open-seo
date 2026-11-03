@@ -1,0 +1,53 @@
+{
+  "searchParameters": {
+    "q": "buy running shoes",
+    "gl": "us",
+    "hl": "en",
+    "num": 100,
+    "type": "search"
+  },
+  "organic": [
+    {
+      "title": "Running Shoes & Sneakers | Nike",
+      "link": "https://www.nike.com/running",
+      "snippet": "Shop running shoes built for speed and comfort.",
+      "position": 1
+    },
+    {
+      "title": "The Best Running Shoes of 2026 | Runner's World",
+      "link": "https://www.runnersworld.com/best-running-shoes",
+      "snippet": "We tested this year's top models on the road and trail.",
+      "position": 2
+    },
+    {
+      "title": "Running Shoes for Men & Women | Adidas US",
+      "link": "https://www.adidas.com/us/running-shoes",
+      "snippet": "Find your perfect running shoe by terrain and pace.",
+      "position": 3
+    },
+    {
+      "title": "Buy Running Shoes Online | ShoeHub Store",
+      "link": "https://store.shoehub.example.com/running",
+      "snippet": "Free shipping on all running footwear.",
+      "position": 4
+    },
+    {
+      "title": "How to Choose Running Shoes | WikiHow Fit",
+      "link": "https://www.wikihow.com/Choose-Running-Shoes",
+      "snippet": "A beginner's guide to fit, drop, and cushioning.",
+      "position": 5
+    }
+  ],
+  "peopleAlsoAsk": [
+    {
+      "question": "How often should I replace running shoes?",
+      "snippet": "Most runners replace shoes every 300 to 500 miles.",
+      "title": "How often should I replace running shoes?",
+      "link": "https://www.runnersworld.com/replace-shoes"
+    }
+  ],
+  "relatedSearches": [
+    { "query": "best running shoes 2026" },
+    { "query": "cheap running shoes sale" }
+  ]
+}

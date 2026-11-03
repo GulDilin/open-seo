@@ -16,6 +16,7 @@ import {
   locationCodeSchema,
   projectIdSchema,
 } from "@/server/mcp/schemas";
+import { searchEngineSchema } from "@/shared/search-engines";
 import { domainField } from "@/types/schemas/domain";
 import { scheduleTimeSchema } from "@/types/schemas/schedule-time";
 
@@ -28,6 +29,11 @@ const inputSchema = {
     ),
   locationCode: locationCodeSchema.optional(),
   languageCode: languageCodeSchema.optional(),
+  searchEngine: searchEngineSchema
+    .optional()
+    .describe(
+      "Search engine to track: google (default), yandex (Russia market), baidu (China), or bing. Only engines offered for the market are accepted. Fixed for the tracker's lifetime — a different engine needs a new tracker.",
+    ),
   locationName: z
     .string()
     .trim()
@@ -99,6 +105,7 @@ export const createRankTrackerTool = {
       domain,
       locationCode: args.locationCode,
       languageCode: args.languageCode,
+      searchEngine: args.searchEngine,
       locationName: args.locationName,
       devices: args.devices ?? "mobile",
       serpDepth: args.serpDepth ?? 40,

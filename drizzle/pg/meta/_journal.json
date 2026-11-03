@@ -267,6 +267,34 @@
       "when": 1792089547475,
       "tag": "0037_smooth_lady_ursula",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792591360003,
+      "tag": "0038_sour_stepford_cuckoos",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1793005414345,
+      "tag": "0039_melodic_captain_flint",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1793006403774,
+      "tag": "0040_odd_katie_power",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1793007069634,
+      "tag": "0041_ambitious_king_cobra",
+      "breakpoints": true
     }
   ]
 }

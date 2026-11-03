@@ -3,6 +3,7 @@ import { waitUntil } from "cloudflare:workers";
 import { RankTrackingRepository } from "@/server/features/rank-tracking/repositories/RankTrackingRepository";
 import { RankTrackingService } from "@/server/features/rank-tracking/services/RankTrackingService";
 import { RankTrackingKeywordService } from "@/server/features/rank-tracking/services/RankTrackingKeywordService";
+import { PanelKeywordSuggestions } from "@/server/features/rank-tracking/services/panelKeywordSuggestions";
 import { getLatestResults } from "@/server/features/rank-tracking/services/rankTrackingResults";
 import { AppError, asAppError } from "@/server/lib/errors";
 import { captureServerEvent } from "@/server/lib/posthog";
@@ -10,6 +11,7 @@ import { markOnboardingMilestone } from "@/server/email/onboarding-drip";
 import { requireProjectContext } from "@/serverFunctions/middleware";
 import {
   getConfigsSchema,
+  getPanelKeywordSuggestionsSchema,
   createConfigSchema,
   updateConfigSchema,
   triggerCheckSchema,
@@ -66,6 +68,19 @@ export const getRankTrackingConfigs = createServerFn({ method: "POST" })
     return RankTrackingRepository.getConfigsForProject(context.projectId);
   });
 
+/** Keyword suggestions from the project's connected site panels (Google Search
+ *  Console + Yandex Webmaster). Empty sources — not an error — when no panel
+ *  is connected, so the UI can show its connect hint. */
+export const getPanelKeywordSuggestions = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(getPanelKeywordSuggestionsSchema)
+  .handler(async ({ data, context }) =>
+    PanelKeywordSuggestions.get({
+      projectId: context.projectId,
+      domain: data.domain,
+    }),
+  );
+
 export const getRankTrackingConfigSummaries = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
   .validator(getConfigsSchema)
@@ -84,6 +99,7 @@ export const createRankTrackingConfig = createServerFn({ method: "POST" })
       locationCode: data.locationCode,
       languageCode: data.languageCode,
       locationName: data.locationName,
+      searchEngine: data.searchEngine,
       devices: data.devices,
       serpDepth: data.serpDepth,
       scheduleInterval: data.scheduleInterval,

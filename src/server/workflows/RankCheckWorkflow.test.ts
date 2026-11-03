@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
   autumnCheck: vi.fn(),
   createDataforseoClient: vi.fn(),
   runLiveCheck: vi.fn(),
+  runProviderCheck: vi.fn(),
   failRunIfActive: vi.fn(),
+  getOptionalEnvValue: vi.fn(),
   captureServerEvent: vi.fn(),
   isHostedServerAuthMode: vi.fn(),
 }));
@@ -34,6 +36,7 @@ vi.mock("@/server/features/rank-tracking/services/rankCheckRunGuards", () => ({
 vi.mock("@/server/workflows/rankCheckPaths", () => ({
   runLiveCheck: mocks.runLiveCheck,
   runQueuedCheck: vi.fn(),
+  runProviderCheck: mocks.runProviderCheck,
   retryRankChecks: vi.fn(),
 }));
 vi.mock("@/server/workflows/pgStep", () => ({
@@ -55,6 +58,8 @@ vi.mock("@/server/billing/autumn", () => ({
 }));
 vi.mock("@/server/lib/runtime-env", () => ({
   isHostedServerAuthMode: mocks.isHostedServerAuthMode,
+  getOptionalEnvValue: mocks.getOptionalEnvValue,
+  getRequiredEnvValue: () => Promise.resolve("test-key"),
 }));
 
 const billingCustomer = {
@@ -77,6 +82,7 @@ const payload = {
   domain: "example.com",
   locationCode: 2840,
   languageCode: "en",
+  searchEngine: "google" as "google" | "yandex" | "baidu" | "bing",
   devices: "desktop" as "desktop" | "mobile" | "both",
   serpDepth: 10,
   trigger: "manual" as const,
@@ -90,7 +96,10 @@ function keywords(count: number) {
 }
 
 function runWorkflow(
-  overrides: Partial<typeof payload> & { maxCostCredits?: number },
+  overrides: Partial<typeof payload> & {
+    maxCostCredits?: number;
+    locationName?: string;
+  },
 ) {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the mocked base class does not inspect Worker constructor context
   const workflow = new RankCheckWorkflow({} as ExecutionContext, {} as Env);
@@ -113,6 +122,8 @@ describe("rank check workflow credit ceiling", () => {
     mocks.updateRun.mockResolvedValue(undefined);
     mocks.isHostedServerAuthMode.mockResolvedValue(true);
     mocks.autumnCheck.mockResolvedValue({ balance: { remaining: 1_000 } });
+    // No provider credentials by default: google falls back to DataForSEO.
+    mocks.getOptionalEnvValue.mockResolvedValue(undefined);
   });
 
   it("rejects a keyword-list race before balance or DataForSEO calls", async () => {
@@ -145,6 +156,73 @@ describe("rank check workflow credit ceiling", () => {
       expect.anything(),
       expect.objectContaining({ keywords: keywords(count) }),
     );
+  });
+});
+
+describe("rank check workflow provider selection", () => {
+  beforeEach(() => {
+    mocks.getConfigById.mockResolvedValue({ isActive: true });
+    mocks.getRunById.mockResolvedValue(activeRun);
+    mocks.getSnapshotsForRun.mockResolvedValue([]);
+    mocks.updateRun.mockResolvedValue(undefined);
+    mocks.getKeywordsForConfig.mockResolvedValue(keywords(3));
+    mocks.isHostedServerAuthMode.mockResolvedValue(false);
+    mocks.getOptionalEnvValue.mockImplementation(async (name: string) =>
+      name === "SERPER_API_KEY" ? "serper-key" : undefined,
+    );
+    mocks.runProviderCheck.mockResolvedValue(undefined);
+  });
+
+  it("routes google checks to serper when its key is set", async () => {
+    await runWorkflow({});
+
+    expect(mocks.runProviderCheck).toHaveBeenCalledTimes(1);
+    expect(mocks.runLiveCheck).not.toHaveBeenCalled();
+    // The metered DataForSEO client must not even be constructed.
+    expect(mocks.createDataforseoClient).not.toHaveBeenCalled();
+  });
+
+  it("keeps city-level google trackers on the DataForSEO path even with serper", async () => {
+    await runWorkflow({ locationName: "Austin,Texas,United States" });
+
+    expect(mocks.runProviderCheck).not.toHaveBeenCalled();
+    expect(mocks.runLiveCheck).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the DataForSEO path when no provider key is set", async () => {
+    mocks.getOptionalEnvValue.mockResolvedValue(undefined);
+
+    await runWorkflow({});
+
+    expect(mocks.runProviderCheck).not.toHaveBeenCalled();
+    expect(mocks.runLiveCheck).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails a non-google engine with no provider before any check", async () => {
+    await runWorkflow({ searchEngine: "yandex" });
+
+    expect(mocks.failRunIfActive).toHaveBeenCalledTimes(1);
+    expect(mocks.updateConfig).toHaveBeenCalledWith("config_1", "project_1", {
+      lastSkipReason: "provider_not_configured",
+    });
+    expect(mocks.runProviderCheck).not.toHaveBeenCalled();
+    expect(mocks.runLiveCheck).not.toHaveBeenCalled();
+  });
+
+  it("routes baidu checks to the brightdata adapter", async () => {
+    mocks.getOptionalEnvValue.mockImplementation(async (name: string) =>
+      name === "BRIGHTDATA_API_TOKEN" ? "token" : undefined,
+    );
+
+    await runWorkflow({ searchEngine: "baidu" });
+
+    expect(mocks.runProviderCheck).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ id: "brightdata" }),
+      "baidu",
+    );
+    expect(mocks.runLiveCheck).not.toHaveBeenCalled();
   });
 });
 

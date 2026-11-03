@@ -10,6 +10,13 @@ import {
   normalizeKeyword,
   type EnrichedKeyword,
 } from "./helpers";
+import { wordstatTopRequests } from "@/server/lib/seo-providers/yandex/client";
+import { generateKeywordIdeas } from "@/server/lib/seo-providers/google-ads/client";
+import {
+  getIsoCountryCode,
+  getLocationCodeForIsoCountry,
+} from "@/shared/keyword-locations";
+import { AppError } from "@/server/lib/errors";
 import type { KeywordSource } from "./selection";
 
 type FetchResearchRowsParams = {
@@ -114,6 +121,87 @@ export async function fetchGoogleAdsResearchRows(
       creditFeature: params.creditFeature,
     }),
   );
+}
+
+/**
+ * Research rows from the operator's own Google Ads API (BYO, decisions §8):
+ * the idea list IS generateKeywordIdeas output for the seed — the same
+ * Keyword Planner suggestions the incumbent resold. Volumes are Google's
+ * bucketed avg-monthly numbers, CPC comes from averageCpcMicros (opt-in);
+ * difficulty/intent do not exist here (nulls, same pattern as Ads rows).
+ */
+export async function fetchGoogleAdsIdeaRows(
+  params: Omit<FetchResearchRowsParams, "source">,
+): Promise<EnrichedKeyword[]> {
+  const locationCode = getLocationCodeForIsoCountry(
+    getIsoCountryCode(params.locationCode),
+  );
+  if (locationCode == null) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      `No market registered for location ${params.locationCode}`,
+    );
+  }
+  const ideas = await generateKeywordIdeas({
+    keywords: [params.seedKeyword],
+    locationCode,
+    languageCode: params.languageCode,
+    ideaCount: params.resultLimit,
+  });
+  const rows: EnrichedKeyword[] = [];
+  const seen = new Set<string>();
+  for (const idea of ideas) {
+    const normalized = normalizeKeyword(idea.keyword);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    rows.push({
+      keyword: normalized,
+      searchVolume: idea.volume,
+      trend: idea.monthly.map((m) => ({
+        year: m.year,
+        month: m.month,
+        searchVolume: m.searchVolume,
+      })),
+      cpc: idea.cpc,
+      competition: null,
+      keywordDifficulty: null,
+      intent: "unknown",
+    });
+  }
+  return rows;
+}
+
+/**
+ * Research rows for the Russia market: the keyword list IS Wordstat's top
+ * requests containing the seed (the same list the public Wordstat UI shows),
+ * volumes are each phrase's own count. Wordstat has no difficulty, intent,
+ * CPC, or competition — nulls, never invented (same pattern as Ads rows).
+ */
+export async function fetchWordstatResearchRows(
+  params: Omit<FetchResearchRowsParams, "source"> & { region?: string },
+): Promise<EnrichedKeyword[]> {
+  const top = await wordstatTopRequests({
+    phrase: params.seedKeyword,
+    numPhrases: params.resultLimit,
+    ...(params.region ? { regions: [params.region] } : {}),
+  });
+  const rows: EnrichedKeyword[] = [];
+  const seen = new Set<string>();
+  for (const item of top.results) {
+    const normalized = normalizeKeyword(item.phrase);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    rows.push({
+      keyword: normalized,
+      searchVolume: Number(item.count),
+      trend: [],
+      cpc: null,
+      competition: null,
+      keywordDifficulty: null,
+      intent: "unknown",
+    });
+  }
+  return rows;
 }
 
 async function fetchRelatedRows(

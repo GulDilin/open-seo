@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 
 const mocks = vi.hoisted(() => ({
@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   createDataforseoClient: vi.fn(),
   getCached: vi.fn(),
   setCached: vi.fn(async () => {}),
+  resolveSerpProvider: vi.fn(async () => "dataforseo"),
+  serperSnapshotItems: vi.fn(),
 }));
 
 vi.mock("cloudflare:workers", () => ({ waitUntil: vi.fn() }));
@@ -25,8 +27,66 @@ vi.mock("@/server/lib/dataforseo", () => ({
   SERP_ANALYSIS_DEPTH: 20,
   createDataforseoClient: mocks.createDataforseoClient,
 }));
+vi.mock("@/server/lib/seo-providers/routing", () => ({
+  resolveSerpProvider: mocks.resolveSerpProvider,
+}));
+vi.mock("@/server/lib/seo-providers/serper/adapter", () => ({
+  serperSnapshotItems: mocks.serperSnapshotItems,
+}));
 
 import { getSerpAnalysis } from "./serp";
+
+describe("serper-backed snapshots", () => {
+  beforeEach(() => {
+    mocks.resolveSerpProvider.mockResolvedValue("serper");
+  });
+
+  it("serves the panel from serper with honest null metrics", async () => {
+    mocks.serperSnapshotItems.mockResolvedValue([
+      {
+        rank: 1,
+        title: "Best SEO Tools",
+        url: "https://example.com/tools",
+        domain: "example.com",
+        description: "A curated list.",
+      },
+    ]);
+
+    const result = await getSerpAnalysis(
+      { ...input, depth: 20 },
+      billingCustomer,
+    );
+
+    expect(mocks.serperSnapshotItems).toHaveBeenCalledWith({
+      keyword: "seo tools",
+      country: "us",
+      language: "en",
+      depth: 20,
+    });
+    expect(mocks.createDataforseoClient).not.toHaveBeenCalled();
+    expect(result.items[0]).toMatchObject({
+      rank: 1,
+      domain: "example.com",
+      description: "A curated list.",
+      etv: null,
+      backlinks: null,
+    });
+  });
+
+  it("keeps city-level requests on the DataForSEO path", async () => {
+    mocks.createDataforseoClient.mockReturnValue({
+      serp: { live: vi.fn().mockResolvedValue([]) },
+    });
+
+    await getSerpAnalysis(
+      { ...input, depth: 20, locationName: "Austin,Texas,United States" },
+      billingCustomer,
+    );
+
+    expect(mocks.serperSnapshotItems).not.toHaveBeenCalled();
+    expect(mocks.createDataforseoClient).toHaveBeenCalled();
+  });
+});
 
 const billingCustomer: BillingCustomerContext = {
   organizationId: "org_1",
@@ -78,6 +138,12 @@ function mockLiveSerp() {
 }
 
 describe("getSerpAnalysis cache depth", () => {
+  beforeEach(() => {
+    // A mockResolvedValue set in the serper describe survives into these
+    // tests — reset the provider to the incumbent path they assert against.
+    mocks.resolveSerpProvider.mockResolvedValue("dataforseo");
+  });
+
   it("keeps a good snapshot when the deeper crawl comes back empty", async () => {
     mocks.getCached.mockResolvedValue(cachedSnapshot(20));
     mocks.createDataforseoClient.mockReturnValue({

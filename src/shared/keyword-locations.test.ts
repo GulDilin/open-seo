@@ -15,6 +15,16 @@ import {
 } from "./keyword-locations";
 
 describe("keyword locations", () => {
+  it("routes Russia to wordstat and China to none — DataForSEO-free markets", () => {
+    expect(getKeywordDataProvider(643)).toBe("wordstat");
+    expect(isSupportedLocationCode(643)).toBe(true);
+    expect(isLabsLocationCode(643)).toBe(false);
+    expect(getLanguageCode(643)).toBe("ru");
+    expect(getKeywordDataProvider(156)).toBe("none");
+    expect(isSupportedLocationCode(156)).toBe(true);
+    expect(getLanguageCode(156)).toBe("zh-CN");
+  });
+
   it("routes Google-Ads-only countries to google_ads and unknown codes to labs", () => {
     expect(getKeywordDataProvider(2352)).toBe("google_ads"); // Iceland
     expect(isSupportedLocationCode(2352)).toBe(true);

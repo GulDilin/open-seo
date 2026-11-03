@@ -1,0 +1,17 @@
+# Fork/local-usage override: build the image from THIS working tree instead
+# of pulling the published ghcr.io image (which does not contain fork changes).
+#
+#   docker compose -f compose.yaml -f compose.local.yaml up -d --build
+#
+# Rebuild after code changes with the same command. Env vars and volumes come
+# from compose.yaml; only the image source differs.
+services:
+  open-seo:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      # Tag the built image so a plain `docker compose up` afterwards reuses
+      # it instead of silently falling back to the published one.
+      tags:
+        - open-seo:local
+    image: open-seo:local

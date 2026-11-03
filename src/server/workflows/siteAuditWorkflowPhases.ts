@@ -187,14 +187,7 @@ export async function runLighthousePhase(
   step: WorkflowStep,
   params: LighthousePhaseParams,
 ) {
-  const {
-    auditId,
-    workflowInstanceId,
-    billingCustomer,
-    projectId,
-    startUrl,
-    config,
-  } = params;
+  const { auditId, workflowInstanceId, projectId, startUrl, config } = params;
   if (config.lighthouseStrategy === "none") return;
 
   const lighthouseWork = await selectLighthousePages({
@@ -231,8 +224,8 @@ export async function runLighthousePhase(
           LIGHTHOUSE_FETCH_STEP,
           () =>
             Promise.all([
-              fetchLighthouseResult(url, pageId, "mobile", billingCustomer),
-              fetchLighthouseResult(url, pageId, "desktop", billingCustomer),
+              fetchLighthouseResult(url, pageId, "mobile"),
+              fetchLighthouseResult(url, pageId, "desktop"),
             ]),
         ),
       ),

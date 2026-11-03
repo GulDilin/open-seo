@@ -12,6 +12,10 @@ import { Link2 } from "lucide-react";
 import { CardShell } from "@/client/components/CardShell";
 import { QueryState } from "@/client/components/QueryState";
 import { getDashboardLinkActivity } from "@/serverFunctions/dashboard";
+import {
+  DataForSeoRequiredBadge,
+  useSeoProviderSetup,
+} from "@/client/components/ProviderRequiredBadge";
 import { DashboardInfo, ExternalPage, Freshness } from "./siteTabParts";
 import { moreDetailsClass } from "./cardParts";
 export function DashboardLinkActivity({
@@ -21,12 +25,24 @@ export function DashboardLinkActivity({
   projectId: string;
   domain: string;
 }) {
+  const setup = useSeoProviderSetup();
   const query = useQuery({
     queryKey: ["dashboardLinkActivity", projectId, domain],
     queryFn: () => getDashboardLinkActivity({ data: { projectId } }),
     staleTime: 86400_000,
     retry: false,
+    // Link activity still runs on DataForSEO; without its key the request
+    // would throw server-side on every dashboard visit. The badge below
+    // explains instead of showing a load error.
+    enabled: setup.data?.dataforseo === true,
   });
+  if (setup.data && !setup.data.dataforseo) {
+    return (
+      <CardShell title="New backlinks">
+        <DataForSeoRequiredBadge />
+      </CardShell>
+    );
+  }
   return (
     <QueryState query={query} errorFallback="Could not load new links">
       {(data) => (

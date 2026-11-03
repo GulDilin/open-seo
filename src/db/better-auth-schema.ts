@@ -97,6 +97,12 @@ export const account = sqliteTable(
       .where(
         sql`${table.providerId} in ('google-search-console', 'google-analytics')`,
       ),
+    // Same conflict target for the Yandex Webmaster data grants; a separate
+    // index because SQLite matches an ON CONFLICT target to a partial index
+    // by its predicate.
+    uniqueIndex("account_yandex_grant_owner_idx")
+      .on(table.userId, table.providerId, table.accountId)
+      .where(sql`${table.providerId} = 'yandex-webmaster'`),
   ],
 );
 

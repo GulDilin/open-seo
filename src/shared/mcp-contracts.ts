@@ -66,6 +66,52 @@ export const searchConsoleSchema = z.looseObject({
 
 export type SearchConsoleData = z.infer<typeof searchConsoleSchema>;
 
+export const yandexWebmasterSchema = z.looseObject({
+  ok: z.boolean(),
+  reason: z.string().optional(),
+  connectUrl: z.string().optional(),
+  setupDocsUrl: z.string().optional(),
+  hostUrl: z.string().optional(),
+  reportedDateFrom: z.string().optional(),
+  reportedDateTo: z.string().optional(),
+  orderBy: z.string().optional(),
+  deviceType: z.string().optional(),
+  totalCount: z.number().optional(),
+  rowCount: z.number().optional(),
+  rows: z
+    .array(
+      z.looseObject({
+        query: z.string(),
+        impressions: z.number().nullable(),
+        clicks: z.number().nullable(),
+        // Derived from clicks/impressions — Yandex does not report CTR.
+        ctr: z.number().nullable(),
+        // Yandex omits indicators it cannot compute for a query.
+        avgShowPosition: z.number().nullable(),
+        avgClickPosition: z.number().nullable(),
+      }),
+    )
+    .optional(),
+  summary: z
+    .looseObject({
+      sqi: z.number().nullable(),
+      searchablePagesCount: z.number().nullable(),
+      excludedPagesCount: z.number().nullable(),
+      indexingStatus: z.string().nullable(),
+      problems: z
+        .looseObject({
+          fatal: z.number().nullable(),
+          critical: z.number().nullable(),
+          possibleProblem: z.number().nullable(),
+          recommendation: z.number().nullable(),
+        })
+        .optional(),
+    })
+    .optional(),
+  limitations: z.array(z.string()).optional(),
+  meta: mcpMetaOutputSchema.optional(),
+});
+
 export const serpItemSchema = z.looseObject({
   type: z.string().nullish(),
   rank: z.number().nullable(),

@@ -55,4 +55,60 @@ describe("runSelfhostPreflight", () => {
     expect(itemFor(result, "Search Console")?.level).toBe("warn");
     expect(itemFor(result, "Search Console")?.message).toContain("32");
   });
+
+  it("reports Yandex Webmaster info when the OAuth client is unset", () => {
+    const result = runSelfhostPreflight({ AUTH_MODE: "local_noauth" });
+
+    expect(itemFor(result, "Yandex Webmaster (OAuth)")?.level).toBe("info");
+    expect(itemFor(result, "Yandex Webmaster (OAuth)")?.message).toContain(
+      "docs/SELF_HOSTING_YANDEX_WEBMASTER.md",
+    );
+  });
+
+  it("warns when only one Yandex OAuth variable is set", () => {
+    const result = runSelfhostPreflight({
+      AUTH_MODE: "local_noauth",
+      YANDEX_OAUTH_CLIENT_ID: "id",
+    });
+
+    expect(itemFor(result, "Yandex Webmaster (OAuth)")?.level).toBe("warn");
+    expect(itemFor(result, "Yandex Webmaster (OAuth)")?.message).toContain(
+      "both are required",
+    );
+  });
+
+  it("marks Yandex Webmaster configured when both variables and the secret exist", () => {
+    const result = runSelfhostPreflight({
+      AUTH_MODE: "local_noauth",
+      YANDEX_OAUTH_CLIENT_ID: "id",
+      YANDEX_OAUTH_CLIENT_SECRET: "secret",
+      BETTER_AUTH_SECRET: "x".repeat(40),
+    });
+
+    expect(itemFor(result, "Yandex Webmaster (OAuth)")?.level).toBe("ok");
+  });
+
+  it("reports alternative providers as unconfigured info, not failures", () => {
+    const result = runSelfhostPreflight({
+      AUTH_MODE: "local_noauth",
+      DATAFORSEO_API_KEY: btoa("user@example.com:secret"),
+    });
+
+    const item = itemFor(result, "SEO data providers");
+    expect(item?.level).toBe("info");
+    expect(item?.message).toContain("Serper (Google): not set");
+    expect(item?.message).toContain("YANDEX_SEARCH_API_KEY + YANDEX_FOLDER_ID");
+  });
+
+  it("flips to ok and hides values when a provider key is set", () => {
+    const result = runSelfhostPreflight({
+      AUTH_MODE: "local_noauth",
+      SERPER_API_KEY: "secret-value",
+    });
+
+    const item = itemFor(result, "SEO data providers");
+    expect(item?.level).toBe("ok");
+    expect(item?.message).toContain("Serper (Google): set");
+    expect(item?.message).not.toContain("secret-value");
+  });
 });

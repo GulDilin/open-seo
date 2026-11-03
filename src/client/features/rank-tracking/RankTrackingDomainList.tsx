@@ -297,6 +297,13 @@ function DomainRow({
             Scheduled check skipped — paid plan required
           </p>
         )}
+        {summary.lastSkipReason === "provider_not_configured" && (
+          <p className="flex items-center gap-1 text-xs text-warning">
+            <AlertTriangle className="size-3" />
+            Check skipped — no data provider configured for this search engine
+            yet. Ask your operator to set the provider credentials.
+          </p>
+        )}
       </div>
       <div className="hidden sm:flex items-center gap-6 text-sm pointer-events-none">
         {summary.keywordCount > 0 && (

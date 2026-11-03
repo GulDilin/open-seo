@@ -1,5 +1,10 @@
 import { AUTH_MODES } from "@/lib/auth-mode";
 import {
+  SEO_PROVIDER_CREDENTIALS,
+  SEO_PROVIDER_IDS,
+  type ProviderId,
+} from "@/shared/search-engines";
+import {
   looksLikeDataForSeoKey,
   MIN_BETTER_AUTH_SECRET_LENGTH,
   validateTeamDomain,
@@ -14,7 +19,15 @@ type PreflightLevel = "ok" | "info" | "warn" | "fail";
 
 type PreflightItem = {
   // Stable identifier shared with /api/health's check map.
-  key: "auth" | "dataforseo" | "gsc" | "ai" | "rendering" | "runtime";
+  key:
+    | "auth"
+    | "dataforseo"
+    | "providers"
+    | "gsc"
+    | "yandex"
+    | "ai"
+    | "rendering"
+    | "runtime";
   name: string;
   level: PreflightLevel;
   message: string;
@@ -195,6 +208,48 @@ function checkOptionalFeatures(env: EnvRecord, items: PreflightItem[]): void {
     });
   }
 
+  // Yandex Webmaster: a separate Yandex ID OAuth client — YANDEX_SEARCH_API_KEY
+  // (checked under "providers") belongs to the Yandex Search API rank provider
+  // and is NOT interchangeable with these.
+  const yandexClientId = get(env, "YANDEX_OAUTH_CLIENT_ID");
+  const yandexClientSecret = get(env, "YANDEX_OAUTH_CLIENT_SECRET");
+  if (yandexClientId || yandexClientSecret) {
+    if (!yandexClientId || !yandexClientSecret) {
+      items.push({
+        key: "yandex",
+        name: "Yandex Webmaster (OAuth)",
+        level: "warn",
+        message:
+          "Only one of YANDEX_OAUTH_CLIENT_ID / YANDEX_OAUTH_CLIENT_SECRET is set — both are required.",
+      });
+    } else if (
+      !betterAuthSecret ||
+      betterAuthSecret.length < MIN_BETTER_AUTH_SECRET_LENGTH
+    ) {
+      items.push({
+        key: "yandex",
+        name: "Yandex Webmaster (OAuth)",
+        level: "warn",
+        message: `Yandex credentials are set, but Yandex Webmaster stays DISABLED until BETTER_AUTH_SECRET is at least ${MIN_BETTER_AUTH_SECRET_LENGTH} characters (it encrypts stored OAuth tokens).`,
+      });
+    } else {
+      items.push({
+        key: "yandex",
+        name: "Yandex Webmaster (OAuth)",
+        level: "ok",
+        message: "Configured",
+      });
+    }
+  } else {
+    items.push({
+      key: "yandex",
+      name: "Yandex Webmaster (OAuth)",
+      level: "info",
+      message:
+        "Not configured (optional). See docs/SELF_HOSTING_YANDEX_WEBMASTER.md.",
+    });
+  }
+
   items.push(
     get(env, "OPENROUTER_API_KEY")
       ? {
@@ -230,6 +285,38 @@ function checkOptionalFeatures(env: EnvRecord, items: PreflightItem[]): void {
   );
 }
 
+// Alternative SEO providers (serper/yandex/brightdata) are all optional and
+// presence-only for now; the message states each provider's status — never
+// the credential values themselves.
+function checkSeoProviders(env: EnvRecord, items: PreflightItem[]): void {
+  const parts = SEO_PROVIDER_IDS.filter((id) => id !== "dataforseo").map(
+    (id) => {
+      const configured = SEO_PROVIDER_CREDENTIALS[id].every((name) =>
+        Boolean(get(env, name)),
+      );
+      const label: Record<ProviderId, string> = {
+        serper: "Serper (Google)",
+        yandex: "Yandex Search API",
+        brightdata: "Bright Data (Baidu/Bing)",
+        googleads: "Google Ads volumes (BYO)",
+        dataforseo: "DataForSEO",
+      };
+      return configured
+        ? `${label[id]}: set`
+        : `${label[id]}: not set (${SEO_PROVIDER_CREDENTIALS[id].join(" + ")})`;
+    },
+  );
+  const anyConfigured = parts.some((part) => !part.includes("not set"));
+  items.push({
+    key: "providers",
+    name: "SEO data providers",
+    level: anyConfigured ? "ok" : "info",
+    message: anyConfigured
+      ? parts.join("; ")
+      : `None configured (optional) — rank tracking keeps using DATAFORSEO_API_KEY. ${parts.join("; ")}`,
+  });
+}
+
 // Shared per-feature checks: the Docker preflight prints these at boot and
 // /api/health (setup-status.ts) serves the same results at runtime, so the
 // two can never drift.
@@ -237,6 +324,7 @@ export function runSelfhostChecks(env: EnvRecord): PreflightItem[] {
   const items: PreflightItem[] = [];
   checkAuthMode(env, items);
   checkDataForSeo(env, items);
+  checkSeoProviders(env, items);
   checkOptionalFeatures(env, items);
   return items;
 }

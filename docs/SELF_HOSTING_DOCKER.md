@@ -36,6 +36,16 @@ Optional env values:
 
 AI Visibility uses your `DATAFORSEO_API_KEY` and sends tracked questions to DataForSEO. Set `OPENROUTER_API_KEY` for setup research, Prompt Research, and generated prompt suggestions. You pay providers directly; the app shows the collection cost before a check or schedule starts. Keep the container running for background answers and daily, weekly, or monthly tracking. The built-in scheduler checks for due work every five minutes; no host cron setup is required. See the [AI Visibility guide](https://openseo.so/docs/ai-visibility).
 
+### Alternative SEO providers (optional)
+
+OpenSEO can also read SEO data from providers other than DataForSEO. All of these are optional — until a provider's integration ships, an unset variable simply shows as "not configured" in the preflight and changes nothing:
+
+- `SERPER_API_KEY` — Google rank checks via [serper.dev](https://serper.dev)
+- `YANDEX_SEARCH_API_KEY` + `YANDEX_FOLDER_ID` — Yandex Search API (both required together)
+- `BRIGHTDATA_API_TOKEN` (+ optional `BRIGHTDATA_SERP_ZONE`, default `serp`) — Baidu/Bing rank checks via Bright Data. The Bright Data account is procured and billed by you directly; the provider restricts some jurisdictions, so account setup is between you and them.
+
+The startup preflight and `/api/health` show each provider as set or not set; credential values are never displayed.
+
 If you are putting Docker behind a reverse proxy or a temporary tunnel, remember that Docker self-hosting runs with app auth disabled. Only expose it behind your own auth-protected reverse proxy, tunnel, or private network, and add the public hostname before restarting:
 
 ```bash
@@ -63,7 +73,13 @@ docker compose up -d
 
 ## Build your own image locally
 
-If you are testing local code changes, build and run a local tag:
+If you are testing local code changes (or running a fork whose changes are not in the published image), build from this working tree in one command — `compose.local.yaml` overrides the image with a local build:
+
+```bash
+docker compose -f compose.yaml -f compose.local.yaml up -d --build
+```
+
+Rebuild after code changes with the same command. The equivalent two-step form also works:
 
 ```bash
 docker build -f deploy/docker/Dockerfile -t open-seo:local .

@@ -82,6 +82,9 @@ export const SEARCH_PERFORMANCE_TABS = [
   "striking",
   "queries",
   "pages",
+  // Yandex Webmaster data lives on the same page; it renders independently of
+  // the Google connection.
+  "yandex",
 ] as const;
 export type SearchPerformanceTab = (typeof SEARCH_PERFORMANCE_TABS)[number];
 

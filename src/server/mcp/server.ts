@@ -98,6 +98,7 @@ import {
   getSearchConsolePerformanceTool,
   inspectUrlsTool,
 } from "@/server/mcp/tools/search-console-tools";
+import { getYandexSearchPerformanceTool } from "@/server/mcp/tools/yandex-webmaster-tools";
 import {
   getAuditIssuesTool,
   getAuditPagesTool,
@@ -287,6 +288,7 @@ export function createOpenSeoMcpServer(
   register(getKeywordMetricsTool);
   register(getSearchConsolePerformanceTool);
   register(inspectUrlsTool);
+  register(getYandexSearchPerformanceTool);
   register(submitIndexNowUrlsTool);
   register(getGoogleAnalyticsOrganicLandingPagesTool);
   register(getGoogleAnalyticsPagePerformanceTool);
