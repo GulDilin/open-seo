@@ -1,6 +1,7 @@
 import type { CreateMcpHandlerOptions } from "agents/mcp/server";
 import { McpServer } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AppError } from "@/server/lib/errors";
 import {
   createWorkersOAuthMcpProps,
   MCP_AUTH_CONTEXT_PROP,
@@ -13,6 +14,8 @@ import {
 const selfHostedAuthMocks = vi.hoisted(() => ({
   resolveCloudflareAccessContext: vi.fn(),
   resolveLocalNoAuthContext: vi.fn(),
+  resolveHostedContext: vi.fn(),
+  handleMcpApiKeyRequest: vi.fn(),
   createOpenSeoMcpServer: vi.fn(),
   createMcpHandler: vi.fn(),
 }));
@@ -41,6 +44,14 @@ vi.mock("@/middleware/ensure-user/cloudflareAccess", () => ({
 
 vi.mock("@/middleware/ensure-user/delegated", () => ({
   resolveLocalNoAuthContext: selfHostedAuthMocks.resolveLocalNoAuthContext,
+}));
+
+vi.mock("@/middleware/ensure-user/hosted", () => ({
+  resolveHostedContext: selfHostedAuthMocks.resolveHostedContext,
+}));
+
+vi.mock("@/server/mcp/api-key-auth", () => ({
+  handleMcpApiKeyRequest: selfHostedAuthMocks.handleMcpApiKeyRequest,
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -214,6 +225,69 @@ describe("handleSelfHostedOpenSeoMcpRequest", () => {
       selfHostedAuthMocks.resolveCloudflareAccessContext,
     ).not.toHaveBeenCalled();
     expect(selfHostedAuthMocks.createOpenSeoMcpServer).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleSelfHostedOpenSeoMcpRequest (oauth mode)", () => {
+  beforeEach(() => {
+    selfHostedAuthMocks.handleMcpApiKeyRequest.mockResolvedValue(null);
+    selfHostedAuthMocks.resolveHostedContext.mockResolvedValue({
+      userId: "oauth-user",
+      userEmail: "person@example.com",
+      organizationId: "org-oauth",
+      emailVerified: true,
+      role: "owner",
+    });
+  });
+
+  it("answers 401 with WWW-Authenticate for no API key and no session", async () => {
+    selfHostedAuthMocks.resolveHostedContext.mockRejectedValueOnce(
+      new AppError("UNAUTHENTICATED"),
+    );
+
+    const response = await handleSelfHostedOpenSeoMcpRequest(
+      createMcpRequest(),
+      "oauth",
+      {},
+      ctx,
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("WWW-Authenticate")).toContain("Bearer");
+  });
+
+  it("serves a browser session through the standard handler", async () => {
+    const response = await handleSelfHostedOpenSeoMcpRequest(
+      createMcpRequest(),
+      "oauth",
+      {},
+      ctx,
+    );
+
+    expect(response.status).toBe(200);
+    expect(selfHostedAuthMocks.createOpenSeoMcpServer).toHaveBeenCalledWith({
+      [MCP_AUTH_CONTEXT_PROP]: {
+        userId: "oauth-user",
+        userEmail: "person@example.com",
+        organizationId: "org-oauth",
+        baseUrl: "https://open-seo.test",
+      },
+    });
+  });
+
+  it("returns the API-key handler's response verbatim", async () => {
+    const viaApiKey = new Response("handled by key", { status: 200 });
+    selfHostedAuthMocks.handleMcpApiKeyRequest.mockResolvedValueOnce(viaApiKey);
+
+    const response = await handleSelfHostedOpenSeoMcpRequest(
+      createMcpRequest(),
+      "oauth",
+      {},
+      ctx,
+    );
+
+    expect(response).toBe(viaApiKey);
+    expect(selfHostedAuthMocks.resolveHostedContext).not.toHaveBeenCalled();
   });
 });
 

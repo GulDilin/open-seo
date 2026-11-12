@@ -4,7 +4,10 @@ import {
   getCurrentAuthRedirect,
   getOAuthSignedQuery,
 } from "@/lib/auth-redirect";
-import { isHostedClientAuthMode } from "@/lib/auth-mode";
+import {
+  isHostedClientAuthMode,
+  isSessionClientAuthMode,
+} from "@/lib/auth-mode";
 import { PRIVACY_URL, TERMS_URL } from "@/shared/terms";
 
 export const authRedirectSearchSchema = z.object({
@@ -30,6 +33,10 @@ export function useAuthPageState(redirect: string | undefined) {
     redirectTo,
     oauthQuery,
     isHostedMode,
+    // oauth (self-hosted) deployments render the sign-in page too — without
+    // the hosted-only chrome around it (spec 016).
+    isSelfHostedOAuthMode:
+      isSessionClientAuthMode() && !isHostedClientAuthMode(),
   };
 }
 

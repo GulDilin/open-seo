@@ -2,6 +2,8 @@
 
 Host OpenSEO on Cloudflare for internet-facing self-hosting across multiple devices or with your team. One deploy command provisions everything, including the Cloudflare Access login gate. Works on Cloudflare's free plan.
 
+Prefer sign-in with your own OpenID Connect provider over Cloudflare Access? OAuth sign-in ([`AUTH_MODE=oauth`](./SELF_HOSTING_DOCKER.md#oauth-sign-in-auth_modeoauth)) is currently supported on the Docker deployment; this Cloudflare deploy does not provision it.
+
 Related guides:
 
 - [Operations](./SELF_HOSTING_CLOUDFLARE_OPERATIONS.md): connect the MCP server, telemetry.

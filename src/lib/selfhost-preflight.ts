@@ -5,6 +5,8 @@ import {
   type ProviderId,
 } from "@/shared/search-engines";
 import {
+  isHttpsOrLocalhostUrl,
+  isHttpsUrl,
   looksLikeDataForSeoKey,
   MIN_BETTER_AUTH_SECRET_LENGTH,
   validateTeamDomain,
@@ -91,6 +93,53 @@ function checkAuthMode(env: EnvRecord, items: PreflightItem[]): void {
     return;
   }
 
+  if (mode === "oauth") {
+    // oauth mode (spec 016): the instance authenticates users against the
+    // operator's own OpenID Connect IdP. Failures name the exact missing
+    // variable so a half-configured switch never silently re-opens (or
+    // bricks) the instance.
+    const missing: string[] = [];
+    for (const name of [
+      "BETTER_AUTH_URL",
+      "BETTER_AUTH_SECRET",
+      "OAUTH_SIGNIN_ISSUER",
+      "OAUTH_SIGNIN_CLIENT_ID",
+      "OAUTH_SIGNIN_CLIENT_SECRET",
+    ]) {
+      if (!get(env, name)) missing.push(name);
+    }
+    const baseUrl = get(env, "BETTER_AUTH_URL");
+    if (baseUrl && !isHttpsOrLocalhostUrl(baseUrl)) {
+      missing.push("BETTER_AUTH_URL (must be https, or http://localhost)");
+    }
+    const issuer = get(env, "OAUTH_SIGNIN_ISSUER");
+    if (issuer && !isHttpsUrl(issuer)) {
+      missing.push("OAUTH_SIGNIN_ISSUER (must be https)");
+    }
+    const secret = get(env, "BETTER_AUTH_SECRET");
+    if (secret && secret.length < MIN_BETTER_AUTH_SECRET_LENGTH) {
+      missing.push(
+        `BETTER_AUTH_SECRET (at least ${MIN_BETTER_AUTH_SECRET_LENGTH} characters)`,
+      );
+    }
+    items.push(
+      missing.length
+        ? {
+            key: "auth",
+            name: "AUTH_MODE",
+            level: "fail",
+            message: `oauth mode requires ${missing.join(", ")}. See docs/SELF_HOSTING_DOCKER.md.`,
+          }
+        : {
+            key: "auth",
+            name: "AUTH_MODE",
+            level: "ok",
+            message: `oauth — OIDC sign-in via ${issuer}`,
+          },
+    );
+    return;
+  }
+
   // cloudflare_access (explicit or defaulted)
   const teamDomain = get(env, "TEAM_DOMAIN");
   const policyAud = get(env, "POLICY_AUD");
@@ -109,7 +158,7 @@ function checkAuthMode(env: EnvRecord, items: PreflightItem[]): void {
       key: "auth",
       name: "AUTH_MODE",
       level: "fail",
-      message: `${modeLabel} requires ${missing}. See docs/SELF_HOSTING_CLOUDFLARE.md — or set AUTH_MODE=local_noauth for a private, no-auth deployment.`,
+      message: `${modeLabel} requires ${missing}. See docs/SELF_HOSTING_CLOUDFLARE.md — or set AUTH_MODE=oauth for OAuth sign-in (docs/SELF_HOSTING_DOCKER.md), or AUTH_MODE=local_noauth for a private, no-auth deployment.`,
     });
     return;
   }

@@ -148,6 +148,10 @@ export async function handleMcpApiKeyRequest(
       userEmail: user.email,
       organizationId,
       role,
+      // The configured URL, not the request's origin: hosted is reachable
+      // through alias hosts whose origin must not leak into dashboard links,
+      // and in oauth mode BETTER_AUTH_URL is the instance's public origin
+      // (the preflight enforces that), so both session modes agree here.
       baseUrl: getHostedBaseUrl(),
       scopes: [...MCP_OAUTH_SCOPES],
       clientId: "api_key",

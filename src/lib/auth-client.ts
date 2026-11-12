@@ -1,6 +1,7 @@
 import { createAuthClient } from "better-auth/react";
 import { apiKeyClient } from "@better-auth/api-key/client";
 import {
+  genericOAuthClient,
   inferAdditionalFields,
   organizationClient,
 } from "better-auth/client/plugins";
@@ -14,6 +15,9 @@ export const authClient = createAuthClient({
   baseURL: typeof window !== "undefined" ? window.location.origin : "",
   plugins: [
     apiKeyClient(),
+    // The client half of the operator's OIDC sign-in provider
+    // (oauth mode, spec 016).
+    genericOAuthClient(),
     // ac/roles must match the server plugin exactly, otherwise the client's
     // synchronous checkRolePermission evaluates against the defaults and
     // disagrees with the server.

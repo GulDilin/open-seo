@@ -1,10 +1,11 @@
 import { env } from "cloudflare:workers";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
-import { captcha } from "better-auth/plugins";
+import { captcha, genericOAuth } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { isDisposableEmailDomain } from "@/server/auth/disposable-email";
+import { createSsoSignInProviderConfig } from "@/server/lib/ssoSignIn";
 import * as d1Schema from "@/db/d1/schema";
 import { d1Db } from "@/db/d1/client";
 import { pgDb } from "@/db/pg/client";
@@ -12,7 +13,12 @@ import * as pgSchema from "@/db/pg/schema";
 import { getDatabaseProvider } from "@/db/provider";
 import { z } from "zod";
 import { CURRENT_TERMS_VERSION } from "@/shared/terms";
-import { isHostedAuthMode } from "@/lib/auth-mode";
+import { isHttpsOrLocalhostUrl } from "@/shared/selfhost-checks";
+import {
+  getAuthMode,
+  isHostedAuthMode,
+  isSessionAuthMode,
+} from "@/lib/auth-mode";
 import { createApiKeyPlugin } from "@/lib/auth-api-key";
 import { createBaseAuthConfig } from "@/lib/auth-config";
 import {
@@ -39,23 +45,19 @@ import {
 const hostedBaseUrlSchema = z
   .string()
   .url()
-  .refine((value) => {
-    const url = new URL(value);
-    return (
-      url.protocol === "https:" ||
-      (url.protocol === "http:" && url.hostname === "localhost")
-    );
-  }, "BETTER_AUTH_URL must use https or localhost");
+  .refine(isHttpsOrLocalhostUrl, "BETTER_AUTH_URL must use https or localhost");
 
 const createdApiKeySchema = z.object({ referenceId: z.string() });
 
 function createAuth() {
-  // Hosted needs the real configured URL (cookies, callbacks, /api/auth routes
-  // all use it). Self-hosted only builds this instance to mint/refresh Search
-  // Console tokens, which never read baseURL — so a placeholder is fine there.
-  const baseUrl = isHostedAuthMode(env.AUTH_MODE)
+  // Hosted and oauth need the real configured URL (cookies, callbacks,
+  // /api/auth routes all use it). local_noauth / cloudflare_access only build
+  // this instance to mint/refresh Search Console tokens, which never read
+  // baseURL — so a placeholder is fine there.
+  const baseUrl = isSessionAuthMode(env.AUTH_MODE)
     ? getHostedBaseUrl()
     : "http://localhost";
+  const isOAuthMode = getAuthMode(env.AUTH_MODE) === "oauth";
   const bypassEmail = Reflect.get(env, "BYPASS_EMAIL_VERIFICATION") === "true";
   const baseAuthConfig = createBaseAuthConfig(
     isHostedAuthMode(env.AUTH_MODE)
@@ -132,6 +134,8 @@ function createAuth() {
   // checks instead of presenting a bypassable captcha.
   const turnstileSecretKey = getHostedTurnstileSecretKey(env);
 
+  const ssoSignInPlugin = getSsoSignInPlugin();
+
   const database =
     getDatabaseProvider() === "postgres"
       ? drizzleAdapter(pgDb, {
@@ -170,42 +174,51 @@ function createAuth() {
       },
     },
     ...baseAuthConfig,
-    emailAndPassword: {
-      ...baseAuthConfig.emailAndPassword,
-      requireEmailVerification: !bypassEmail,
-      resetPasswordTokenExpiresIn: 60 * 60,
-      revokeSessionsOnPasswordReset: true,
-      sendResetPassword: async ({ user, url }) => {
-        await sendHostedPasswordResetEmail({
-          email: user.email,
-          resetUrl: url,
-        });
-      },
-    },
-    emailVerification: bypassEmail
-      ? undefined
+    emailAndPassword: isOAuthMode
+      ? // OAuth-only mode (spec 016): the base default enables password
+        // sign-in, but its reset/verification callbacks are Loops-hosted and
+        // would fail at runtime on a self-host — disable the whole lane.
+        { ...baseAuthConfig.emailAndPassword, enabled: false }
       : {
-          sendOnSignUp: true,
-          autoSignInAfterVerification: true,
-          sendVerificationEmail: async ({ user, url }) => {
-            await sendHostedVerificationEmail({
+          ...baseAuthConfig.emailAndPassword,
+          requireEmailVerification: !bypassEmail,
+          resetPasswordTokenExpiresIn: 60 * 60,
+          revokeSessionsOnPasswordReset: true,
+          sendResetPassword: async ({ user, url }) => {
+            await sendHostedPasswordResetEmail({
               email: user.email,
-              confirmationUrl: url,
+              resetUrl: url,
             });
           },
         },
+    emailVerification:
+      bypassEmail || isOAuthMode
+        ? undefined
+        : {
+            sendOnSignUp: true,
+            autoSignInAfterVerification: true,
+            sendVerificationEmail: async ({ user, url }) => {
+              await sendHostedVerificationEmail({
+                email: user.email,
+                confirmationUrl: url,
+              });
+            },
+          },
     socialProviders: getSocialProviders(),
     // Where Google sign-in failures land (canceled consent screen, replayed
     // callback URLs). Without this the default /api/auth/error page 302s to
-    // `/?error=...` and the dashboard silently discards the code. Self-hosted
-    // never serves social sign-in, so the placeholder baseUrl there is
-    // harmless.
+    // `/?error=...` and the dashboard silently discards the code. Modes
+    // without social sign-in never route here, so the placeholder baseUrl
+    // there is harmless.
     onAPIError: { errorURL: `${baseUrl}/auth-error` },
     trustedOrigins: getTrustedOrigins(baseUrl),
     database,
     plugins: [
       ...baseAuthConfig.plugins,
-      ...(isHostedAuthMode(env.AUTH_MODE) ? [createApiKeyPlugin()] : []),
+      ...(ssoSignInPlugin ? [ssoSignInPlugin] : []),
+      // Both session modes serve MCP clients through API keys (hosted from
+      // the settings UI, oauth the same — spec 016 D5).
+      ...(isSessionAuthMode(env.AUTH_MODE) ? [createApiKeyPlugin()] : []),
       ...(turnstileSecretKey
         ? [
             captcha({
@@ -385,19 +398,54 @@ function getHostedSecret() {
   return secret;
 }
 
+// The single sign-in provider for oauth mode (spec 016): one OpenID Connect
+// IdP configured through OAUTH_SIGNIN_ISSUER + the client pair; endpoints
+// come from the IdP's discovery document at runtime (ssoSignIn.ts). Hosted
+// signs in with Google; other modes never serve sign-in.
+function getOauthSignInCredentials() {
+  const issuer = env.OAUTH_SIGNIN_ISSUER?.trim();
+  const clientId = env.OAUTH_SIGNIN_CLIENT_ID?.trim();
+  const clientSecret = env.OAUTH_SIGNIN_CLIENT_SECRET?.trim();
+  return issuer && clientId && clientSecret
+    ? { issuer, clientId, clientSecret }
+    : null;
+}
+
+function getSsoSignInPlugin() {
+  if (getAuthMode(env.AUTH_MODE) !== "oauth") return null;
+  // Fail closed: the Docker preflight aborts boot on a missing triple, but
+  // that preflight does not run everywhere (e.g. the Cloudflare deploy).
+  // Serving oauth mode without its provider would render a dead sign-in
+  // button, so construction itself refuses instead.
+  const credentials = getOauthSignInCredentials();
+  if (!credentials) {
+    throw new Error(
+      "AUTH_MODE=oauth requires OAUTH_SIGNIN_ISSUER, OAUTH_SIGNIN_CLIENT_ID, and OAUTH_SIGNIN_CLIENT_SECRET",
+    );
+  }
+  return genericOAuth({
+    config: [
+      createSsoSignInProviderConfig({
+        ...credentials,
+        scopes: env.OAUTH_SIGNIN_SCOPES,
+      }),
+    ],
+  });
+}
+
 function getSocialProviders() {
   // Google social login is hosted-only. Self-hosted builds the auth instance
   // for sessions and for the token-encryption secret that Search Console /
   // Analytics grants use (googleOAuth.ts) — so it must NOT require the
   // social-login config here, otherwise getAuth() construction would be coupled
-  // to Google creds rather than just BETTER_AUTH_SECRET.
-  if (!isHostedAuthMode(env.AUTH_MODE)) {
-    return {};
+  // to Google creds rather than just BETTER_AUTH_SECRET. In oauth mode the
+  // OIDC sign-in provider registers itself through the genericOAuth plugin
+  // (getSsoSignInPlugin), not through socialProviders.
+  if (isHostedAuthMode(env.AUTH_MODE)) {
+    return { google: getGoogleSocialProviderConfig() };
   }
 
-  return {
-    google: getGoogleSocialProviderConfig(),
-  };
+  return {};
 }
 
 function getGoogleSocialProviderConfig() {
@@ -434,7 +482,7 @@ function hasHostedAuthEmailConfig() {
   });
 }
 
-export function hasHostedAuthConfig() {
+function hasHostedAuthConfig() {
   try {
     getHostedBaseUrl();
     getHostedSecret();
@@ -447,6 +495,30 @@ export function hasHostedAuthConfig() {
   } catch {
     return false;
   }
+}
+
+/** oauth mode needs the real base URL (cookies, OAuth callbacks), the secret,
+ *  and the operator's OIDC provider triple — checked here too (not only by
+ *  the Docker preflight) because that preflight does not run on every deploy
+ *  path, and a half-configured instance must fail closed, not serve a dead
+ *  sign-in button. */
+function hasOAuthAuthConfig() {
+  try {
+    getHostedBaseUrl();
+    getHostedSecret();
+    return getOauthSignInCredentials() !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Session-auth modes (hosted, oauth) resolve users through Better Auth
+ *  sessions; each mode's config is checked before a session lookup so a
+ *  misconfigured deployment fails with a named mode, not a confusing
+ *  construction error. */
+export function hasSessionAuthConfig() {
+  if (isHostedAuthMode(env.AUTH_MODE)) return hasHostedAuthConfig();
+  return getAuthMode(env.AUTH_MODE) === "oauth" && hasOAuthAuthConfig();
 }
 
 export function getAuth() {

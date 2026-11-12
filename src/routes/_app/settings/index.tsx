@@ -3,7 +3,10 @@ import { ApiKeySettings } from "@/client/features/settings/ApiKeySettings";
 import { SectionHeader } from "@/client/components/PageHeader";
 import { ThemePreferenceRadio } from "@/client/components/ThemePreferenceMenuItems";
 import { PrivacySettings } from "@/client/features/settings/PrivacySettings";
-import { isHostedClientAuthMode } from "@/lib/auth-mode";
+import {
+  isHostedClientAuthMode,
+  isSessionClientAuthMode,
+} from "@/lib/auth-mode";
 import { version } from "../../../../package.json";
 
 export const Route = createFileRoute("/_app/settings/")({
@@ -12,6 +15,9 @@ export const Route = createFileRoute("/_app/settings/")({
 
 function PersonalSettings() {
   const isHosted = isHostedClientAuthMode();
+  // API keys exist wherever real sessions do (hosted + self-hosted oauth —
+  // they are the MCP credential, spec 016); privacy choices are hosted-only.
+  const isSessionAuth = isSessionClientAuthMode();
   return (
     <div className="space-y-10">
       <section className="space-y-3">
@@ -22,13 +28,11 @@ function PersonalSettings() {
         </div>
       </section>
 
-      {isHosted ? (
-        <>
-          <ApiKeySettings />
+      {isSessionAuth ? <ApiKeySettings /> : null}
 
-          <PrivacySettings />
-        </>
-      ) : (
+      {isHosted ? <PrivacySettings /> : null}
+
+      {!isSessionAuth ? (
         <section className="space-y-3">
           <SectionHeader title="About" />
           <div className="flex items-center justify-between gap-6">
@@ -38,7 +42,7 @@ function PersonalSettings() {
             </span>
           </div>
         </section>
-      )}
+      ) : null}
     </div>
   );
 }

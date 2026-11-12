@@ -9,6 +9,13 @@ vi.mock("@/lib/auth", () => ({
   getHostedBaseUrl: () => "https://open-seo.test",
 }));
 
+// transport.ts imports the API-key handler (oauth mode routes through it);
+// its module graph reaches `cloudflare:workers`-backed imports that vitest
+// cannot resolve here, and this suite only exercises the OAuth lane anyway.
+vi.mock("@/server/mcp/api-key-auth", () => ({
+  handleMcpApiKeyRequest: vi.fn(),
+}));
+
 // The hosted transport re-checks membership per request; mocking the
 // repository keeps this test off `cloudflare:workers`-backed db imports.
 vi.mock("@/server/auth/repositories/AuthRepository", () => ({

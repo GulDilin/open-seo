@@ -11,6 +11,10 @@ import { getHostedBaseUrl } from "@/lib/auth";
 import { MCP_SCOPE } from "@/lib/oauth-resource";
 import { resolveCloudflareAccessContext } from "@/middleware/ensure-user/cloudflareAccess";
 import { resolveLocalNoAuthContext } from "@/middleware/ensure-user/delegated";
+import { resolveHostedContext } from "@/middleware/ensure-user/hosted";
+import type { EnsuredUserContext } from "@/middleware/ensure-user/types";
+import { AppError } from "@/server/lib/errors";
+import { handleMcpApiKeyRequest } from "@/server/mcp/api-key-auth";
 import {
   createWorkersOAuthMcpProps,
   hostedWorkersOAuthMcpPropsSchema,
@@ -240,9 +244,19 @@ export async function handleAuthenticatedOpenSeoMcpRequest(
   ])(request, env, ctx);
 }
 
+function selfHostedPropsFor(request: Request, identity: EnsuredUserContext) {
+  return createWorkersOAuthMcpProps({
+    userId: identity.userId,
+    userEmail: identity.userEmail,
+    organizationId: identity.organizationId,
+    baseUrl: getPublicOrigin(request),
+    userAgent: request.headers.get("user-agent") ?? undefined,
+  });
+}
+
 export async function handleSelfHostedOpenSeoMcpRequest(
   request: Request,
-  authMode: "cloudflare_access" | "local_noauth",
+  authMode: "cloudflare_access" | "local_noauth" | "oauth",
   env: unknown,
   ctx: ExecutionContext,
 ): Promise<Response> {
@@ -251,17 +265,37 @@ export async function handleSelfHostedOpenSeoMcpRequest(
     return new Response(null, { headers: MCP_CORS_HEADERS });
   }
 
+  if (authMode === "oauth") {
+    // MCP clients are credential-based (spec 016 D5): an API key fully
+    // handles the request — including its own error responses — and a
+    // browser session covers same-origin callers; anonymous fails closed.
+    const viaApiKey = await handleMcpApiKeyRequest(request, env, ctx);
+    if (viaApiKey) return viaApiKey;
+    try {
+      const identity = await resolveHostedContext(request.headers);
+      return createRequestHandler(
+        selfHostedPropsFor(request, identity),
+        await supportsMcpApps(request),
+      )(request, env, ctx);
+    } catch (error) {
+      if (error instanceof AppError && error.code === "UNAUTHENTICATED") {
+        return new Response("Unauthorized", {
+          status: 401,
+          headers: {
+            ...MCP_CORS_HEADERS,
+            "WWW-Authenticate": 'Bearer realm="OpenSEO MCP"',
+          },
+        });
+      }
+      throw error;
+    }
+  }
+
   const identity =
     authMode === "local_noauth"
       ? await resolveLocalNoAuthContext()
       : await resolveCloudflareAccessContext(request.headers);
-  const props = createWorkersOAuthMcpProps({
-    userId: identity.userId,
-    userEmail: identity.userEmail,
-    organizationId: identity.organizationId,
-    baseUrl: getPublicOrigin(request),
-    userAgent: request.headers.get("user-agent") ?? undefined,
-  });
+  const props = selfHostedPropsFor(request, identity);
 
   return createRequestHandler(props, await supportsMcpApps(request))(
     request,

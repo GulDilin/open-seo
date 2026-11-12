@@ -2,7 +2,7 @@
 
 Run OpenSEO locally with Docker.
 
-In Docker mode, OpenSEO uses `AUTH_MODE=local_noauth` (no auth checks, local admin user `admin@localhost`). Only expose it behind your own auth-protected reverse proxy, tunnel, or private network.
+In Docker mode, OpenSEO uses `AUTH_MODE=local_noauth` (no auth checks, local admin user `admin@localhost`). Only expose it behind your own auth-protected reverse proxy, tunnel, or private network — or switch to real OpenID Connect sign-in with [`AUTH_MODE=oauth`](#oauth-sign-in-auth_modeoauth).
 
 The default `compose.yaml` uses the published GHCR image:
 
@@ -53,6 +53,48 @@ ALLOWED_HOST=yourdomain.com docker compose up -d
 ```
 
 You can also persist it in `.env`.
+
+## OAuth sign-in (`AUTH_MODE=oauth`)
+
+`local_noauth` trusts everyone who reaches the container. `AUTH_MODE=oauth` turns on real sign-in against **any OpenID Connect provider you choose** — Keycloak, Authentik, Auth0, Okta, Dex, Zitadel, Google, or your own IdP — with one isolated workspace per account.
+
+Set in `.env`:
+
+```bash
+AUTH_MODE=oauth
+# The public origin of this instance (http://localhost:3001 works too)
+BETTER_AUTH_URL=https://your-domain.example
+# Random, 32+ characters: openssl rand -hex 32
+BETTER_AUTH_SECRET=
+
+# Your IdP's issuer base URL — authorization, token, and userinfo endpoints
+# are discovered from <issuer>/.well-known/openid-configuration at runtime.
+OAUTH_SIGNIN_ISSUER=https://idp.example.com/realms/main
+# A client registered on the IdP with redirect URI
+# <BETTER_AUTH_URL>/api/auth/oauth2/callback/sso
+OAUTH_SIGNIN_CLIENT_ID=
+OAUTH_SIGNIN_CLIENT_SECRET=
+# Optional: space-separated scopes (default "openid profile email")
+# OAUTH_SIGNIN_SCOPES=
+```
+
+Register a client on your IdP with the redirect URI
+`<BETTER_AUTH_URL>/api/auth/oauth2/callback/sso`. Common issuer URLs:
+
+| Provider | Issuer (`OAUTH_SIGNIN_ISSUER`) |
+| --- | --- |
+| Keycloak | `https://<host>/realms/<realm>` |
+| Authentik | `https://<host>/application/o/<slug>` |
+| Google | `https://accounts.google.com` |
+| Auth0 | `https://<tenant>.<region>.auth0.com` |
+
+Restart with `docker compose up -d`. The startup preflight names exactly what is missing when a value is absent, and the instance serves no data to anyone until the configuration is complete.
+
+Requirements on the IdP: its userinfo (or id_token) must return the user's subject id (`sub`) and **email address** — the email is the account key, and doubles as the display name when the profile has no `name`/username field. An email missing from the profile is a refused sign-in, not an account without an address.
+
+Whoever your IdP lets in can sign in — restrict that in the IdP's client policy; the instance itself accepts every account the IdP releases. MCP clients authenticate with an API key created in **Settings → Personal**.
+
+Switching from `local_noauth` does not touch existing data: the local admin user and its projects stay in the database; switch the mode back to work on them again.
 
 ## Telemetry
 

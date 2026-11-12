@@ -173,7 +173,9 @@ function handleFetch(
   }
 
   if (
-    (authMode === "cloudflare_access" || authMode === "local_noauth") &&
+    (authMode === "cloudflare_access" ||
+      authMode === "local_noauth" ||
+      authMode === "oauth") &&
     pathname === MCP_ROUTE
   ) {
     return import("@/server/mcp/transport").then(

@@ -111,4 +111,92 @@ describe("runSelfhostPreflight", () => {
     expect(item?.message).toContain("Serper (Google): set");
     expect(item?.message).not.toContain("secret-value");
   });
+
+  const OAUTH_BASE = {
+    AUTH_MODE: "oauth",
+    BETTER_AUTH_URL: "https://seo.example.com",
+    BETTER_AUTH_SECRET: "x".repeat(40),
+    OAUTH_SIGNIN_ISSUER: "https://idp.example.com/realms/main",
+    OAUTH_SIGNIN_CLIENT_ID: "id",
+    OAUTH_SIGNIN_CLIENT_SECRET: "secret",
+  } as const;
+
+  it("passes oauth mode naming the configured OIDC issuer", () => {
+    const result = runSelfhostPreflight({ ...OAUTH_BASE });
+
+    expect(result.failed).toBe(false);
+    const item = itemFor(result, "AUTH_MODE");
+    expect(item?.level).toBe("ok");
+    expect(item?.message).toContain(OAUTH_BASE.OAUTH_SIGNIN_ISSUER);
+  });
+
+  it("fails oauth mode listing every missing OIDC variable", () => {
+    const result = runSelfhostPreflight({
+      AUTH_MODE: "oauth",
+      BETTER_AUTH_URL: "https://seo.example.com",
+      BETTER_AUTH_SECRET: "x".repeat(40),
+    });
+
+    expect(result.failed).toBe(true);
+    const message = itemFor(result, "AUTH_MODE")?.message;
+    expect(message).toContain("OAUTH_SIGNIN_ISSUER");
+    expect(message).toContain("OAUTH_SIGNIN_CLIENT_ID");
+    expect(message).toContain("OAUTH_SIGNIN_CLIENT_SECRET");
+  });
+
+  it("fails oauth mode naming the exact missing half of the client pair", () => {
+    const result = runSelfhostPreflight({
+      ...OAUTH_BASE,
+      OAUTH_SIGNIN_CLIENT_SECRET: undefined,
+    });
+
+    expect(result.failed).toBe(true);
+    const message = itemFor(result, "AUTH_MODE")?.message;
+    expect(message).toContain("OAUTH_SIGNIN_CLIENT_SECRET");
+    expect(message).not.toContain("OAUTH_SIGNIN_CLIENT_SECRET,");
+  });
+
+  it("fails oauth mode on a short BETTER_AUTH_SECRET", () => {
+    const result = runSelfhostPreflight({
+      ...OAUTH_BASE,
+      BETTER_AUTH_SECRET: "too-short",
+    });
+
+    expect(result.failed).toBe(true);
+    expect(itemFor(result, "AUTH_MODE")?.message).toContain(
+      "BETTER_AUTH_SECRET (at least 32 characters)",
+    );
+  });
+
+  it("fails oauth mode on a non-https BETTER_AUTH_URL", () => {
+    const result = runSelfhostPreflight({
+      ...OAUTH_BASE,
+      BETTER_AUTH_URL: "http://seo.example.com",
+    });
+
+    expect(result.failed).toBe(true);
+    expect(itemFor(result, "AUTH_MODE")?.message).toContain(
+      "BETTER_AUTH_URL (must be https, or http://localhost)",
+    );
+  });
+
+  it("fails oauth mode on a non-https OIDC issuer", () => {
+    const result = runSelfhostPreflight({
+      ...OAUTH_BASE,
+      OAUTH_SIGNIN_ISSUER: "http://idp.example.com",
+    });
+
+    expect(result.failed).toBe(true);
+    expect(itemFor(result, "AUTH_MODE")?.message).toContain(
+      "OAUTH_SIGNIN_ISSUER (must be https)",
+    );
+  });
+
+  it("offers oauth as an alternative in the cloudflare_access failure hint", () => {
+    const result = runSelfhostPreflight({});
+
+    expect(itemFor(result, "AUTH_MODE")?.message).toContain(
+      "AUTH_MODE=oauth",
+    );
+  });
 });
