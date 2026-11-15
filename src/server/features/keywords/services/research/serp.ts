@@ -3,6 +3,9 @@ import {
   SERP_ANALYSIS_DEPTH,
   type SerpLiveItem,
 } from "@/server/lib/dataforseo";
+import { resolveSerpProvider } from "@/server/lib/seo-providers/routing";
+import { serperSnapshotItems } from "@/server/lib/seo-providers/serper/adapter";
+import { getIsoCountryCode } from "@/shared/keyword-locations";
 import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
 import type { SerpResultItem } from "@/types/keywords";
 import { z } from "zod";
@@ -101,15 +104,47 @@ async function getSerpLiveAnalysis(
     return cached.data;
   }
 
-  const liveItems = await createDataforseoClient(billingCustomer).serp.live({
-    keyword,
-    locationCode: input.locationCode,
-    languageCode: input.languageCode,
-    locationName: input.locationName,
-    depth,
-  });
+  // The active google provider serves the snapshot: Serper when its key is
+  // set (provider chain order), the incumbent otherwise. Same cache either
+  // way — depth lives in the value, not the key. City-level requests always
+  // take the incumbent: they need sub-country geo, which Serper cannot serve
+  // (decisions §5).
+  const googleProvider = input.locationName
+    ? "dataforseo"
+    : await resolveSerpProvider("google").catch(() => "dataforseo");
 
-  const items = mapOrganicSerpItems(liveItems);
+  let items: SerpResultItem[];
+  if (googleProvider === "serper") {
+    const snapshot = await serperSnapshotItems({
+      keyword,
+      country: getIsoCountryCode(input.locationCode),
+      language: input.languageCode,
+      // The panel shows the top of the SERP; Serper pages cost a credit per
+      // 10 results, so a depth-100 snapshot would 10x the spend for rows
+      // the panel never renders. The cache still records the requested
+      // depth, so a deeper request may reuse this top slice instead of
+      // re-paying for it.
+      depth: Math.min(depth, 20),
+    });
+    items = snapshot.map((item) => ({
+      ...item,
+      etv: null,
+      estimatedPaidTrafficCost: null,
+      referringDomains: null,
+      backlinks: null,
+      isNew: false,
+      rankChange: null,
+    }));
+  } else {
+    const liveItems = await createDataforseoClient(billingCustomer).serp.live({
+      keyword,
+      locationCode: input.locationCode,
+      languageCode: input.languageCode,
+      locationName: input.locationName,
+      depth,
+    });
+    items = mapOrganicSerpItems(liveItems);
+  }
   const result: SerpAnalysisResult = {
     requestedKeyword: keyword,
     items,

@@ -15,6 +15,7 @@ import { Spinner } from "@/client/components/ui/spinner";
 import { DataTableTabs } from "@/client/components/table/DataTableToolbar";
 import { TabsTrigger } from "@/client/components/ui/tabs";
 import { GoogleConnectionCard } from "@/client/features/integrations/GoogleConnectionCard";
+import { YandexSection } from "@/client/features/search-performance/YandexSection";
 import { DimensionSection } from "@/client/features/search-performance/SearchPerformanceDimensionSection";
 import { SearchPerformanceSelects } from "@/client/features/search-performance/SearchPerformanceSelects";
 import { SearchPerformanceLoadingState } from "@/client/features/search-performance/SearchPerformanceLoadingState";
@@ -243,9 +244,50 @@ export function SearchPerformancePage({
             {filtersPanel}
             {reportError}
           </>
+        ) : tab === "yandex" ? (
+          // The Yandex tab renders independently of the Google connection.
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <DataTableTabs
+              value={tab}
+              onValueChange={(value) => {
+                const nextTab = SEARCH_PERFORMANCE_TABS.find(
+                  (item) => item === value,
+                );
+                if (nextTab) onSearchChange({ tab: nextTab, page: undefined });
+              }}
+            >
+              <TabsTrigger value="striking">
+                {report.connected
+                  ? `Striking distance (${report.strikingDistance.length})`
+                  : "Striking distance"}
+              </TabsTrigger>
+              <TabsTrigger value="queries">Queries</TabsTrigger>
+              <TabsTrigger value="pages">Pages</TabsTrigger>
+              <TabsTrigger value="yandex">Yandex</TabsTrigger>
+            </DataTableTabs>
+            <YandexSection projectId={projectId} />
+          </div>
         ) : !report.connected ? (
-          <div className="max-w-2xl">
-            <GoogleConnectionCard provider="gsc" projectId={projectId} />
+          // The Google connect card is the panel content when Search Console
+          // isn't connected; the tab bar stays so the Yandex tab is reachable.
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <DataTableTabs
+              value={tab}
+              onValueChange={(value) => {
+                const nextTab = SEARCH_PERFORMANCE_TABS.find(
+                  (item) => item === value,
+                );
+                if (nextTab) onSearchChange({ tab: nextTab, page: undefined });
+              }}
+            >
+              <TabsTrigger value="striking">Striking distance</TabsTrigger>
+              <TabsTrigger value="queries">Queries</TabsTrigger>
+              <TabsTrigger value="pages">Pages</TabsTrigger>
+              <TabsTrigger value="yandex">Yandex</TabsTrigger>
+            </DataTableTabs>
+            <div className="max-w-2xl p-4">
+              <GoogleConnectionCard provider="gsc" projectId={projectId} />
+            </div>
           </div>
         ) : (
           <>
@@ -281,6 +323,7 @@ export function SearchPerformancePage({
                 </TabsTrigger>
                 <TabsTrigger value="queries">Queries</TabsTrigger>
                 <TabsTrigger value="pages">Pages</TabsTrigger>
+                <TabsTrigger value="yandex">Yandex</TabsTrigger>
               </DataTableTabs>
               <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
                 <Button

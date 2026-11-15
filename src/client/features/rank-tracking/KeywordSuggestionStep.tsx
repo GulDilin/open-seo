@@ -7,7 +7,10 @@ import {
 } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { getDomainKeywordSuggestions } from "@/serverFunctions/domain";
-import { addTrackingKeywords } from "@/serverFunctions/rank-tracking";
+import {
+  addTrackingKeywords,
+  getPanelKeywordSuggestions,
+} from "@/serverFunctions/rank-tracking";
 import { isLabsLocationCode } from "@/client/features/keywords/locations";
 import { Spinner } from "@/client/components/Spinner";
 import {
@@ -22,115 +25,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/client/components/ui/dialog";
-import { SortableHeader } from "@/client/components/table/SortableHeader";
-import { RANK_TRACKING_HEADER_CLASS } from "./RankTrackingColumns";
 import {
   applyShiftRangeSelection,
   type SelectionAnchor,
 } from "@/client/components/table/tableSelection";
-
-type SuggestedKeyword = {
-  keyword: string;
-  position: number | null;
-  searchVolume: number | null;
-  traffic: number | null;
-};
+import {
+  ConnectPanelsHint,
+  PanelSuggestionsTable,
+  suggestedKeywordColumns,
+  usePanelSuggestionTable,
+  type SuggestedKeyword,
+} from "./KeywordSuggestionTables";
 
 const PRE_SELECT_COUNT = 20;
-
-const baseColumns: ColumnDef<SuggestedKeyword>[] = [
-  {
-    id: "keyword",
-    accessorKey: "keyword",
-    header: ({ column }) => (
-      <SortableHeader
-        column={column}
-        label="Keyword"
-        title="The search term this domain ranks for"
-        className={RANK_TRACKING_HEADER_CLASS}
-      />
-    ),
-    cell: ({ getValue }) => (
-      <span className="font-medium">{getValue<string>()}</span>
-    ),
-    sortingFn: "alphanumeric",
-  },
-  {
-    id: "position",
-    accessorKey: "position",
-    header: ({ column }) => (
-      <SortableHeader
-        column={column}
-        label="Position"
-        title="Current Google ranking position"
-        className={RANK_TRACKING_HEADER_CLASS}
-      />
-    ),
-    cell: ({ getValue }) => {
-      const pos = getValue<number | null>();
-      return pos != null ? (
-        pos
-      ) : (
-        <span className="text-muted-foreground">—</span>
-      );
-    },
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.position ?? 999;
-      const b = rowB.original.position ?? 999;
-      return a - b;
-    },
-  },
-  {
-    id: "searchVolume",
-    accessorKey: "searchVolume",
-    header: ({ column }) => (
-      <SortableHeader
-        column={column}
-        label="Volume"
-        title="Monthly search volume"
-        className={RANK_TRACKING_HEADER_CLASS}
-      />
-    ),
-    cell: ({ getValue }) => {
-      const vol = getValue<number | null>();
-      return vol != null ? (
-        vol.toLocaleString()
-      ) : (
-        <span className="text-muted-foreground">—</span>
-      );
-    },
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.searchVolume ?? 0;
-      const b = rowB.original.searchVolume ?? 0;
-      return a - b;
-    },
-  },
-  {
-    id: "traffic",
-    accessorKey: "traffic",
-    header: ({ column }) => (
-      <SortableHeader
-        column={column}
-        label="Traffic"
-        title="Estimated monthly organic traffic"
-        className={RANK_TRACKING_HEADER_CLASS}
-      />
-    ),
-    cell: ({ getValue }) => {
-      const traffic = getValue<number | null>();
-      return traffic != null ? (
-        Math.round(traffic).toLocaleString()
-      ) : (
-        <span className="text-muted-foreground">—</span>
-      );
-    },
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.traffic ?? 0;
-      const b = rowB.original.traffic ?? 0;
-      return a - b;
-    },
-  },
-];
 
 type Props = {
   configId: string;
@@ -159,7 +66,7 @@ export function KeywordSuggestionStep({
   const columns = useMemo<ColumnDef<SuggestedKeyword>[]>(
     () => [
       makeSelectionColumn<SuggestedKeyword>(selectAnchorRef),
-      ...baseColumns,
+      ...suggestedKeywordColumns,
     ],
     [],
   );
@@ -178,6 +85,18 @@ export function KeywordSuggestionStep({
       }),
     enabled: labsSupported,
   });
+
+  // Panel-backed suggestions cover every country — for markets Labs doesn't
+  // serve (e.g. Russia) this is the only suggestion source.
+  const panelsQuery = useQuery({
+    queryKey: ["panelKeywordSuggestions", projectId, domain],
+    queryFn: () => getPanelKeywordSuggestions({ data: { projectId, domain } }),
+  });
+  const panelSuggestions = panelsQuery.data?.suggestions ?? [];
+  const panelSources = panelsQuery.data?.sources ?? [];
+  const panelsPending = panelsQuery.isPending;
+
+  const panelSelection = usePanelSuggestionTable(panelSuggestions);
 
   const data = suggestionsQuery.data ?? [];
 
@@ -209,9 +128,14 @@ export function KeywordSuggestionStep({
     enableRowSelection: true,
   });
 
-  const selectedCount = Object.keys(rowSelection).filter(
-    (k) => rowSelection[k],
-  ).length;
+  // addTrackingKeywords dedupes, so the same query picked from both tables is
+  // added once.
+  const selectedKeywords = [
+    ...table.getSelectedRowModel().rows.map((row) => row.original.keyword),
+    ...panelSelection.selectedQueries,
+  ];
+  const selectedCount = selectedKeywords.length;
+  const totalCount = data.length + panelSuggestions.length;
 
   const addMutation = useMutation({
     mutationFn: (keywords: string[]) =>
@@ -223,24 +147,73 @@ export function KeywordSuggestionStep({
   });
 
   const handleAdd = () => {
-    const selectedKeywords = table
-      .getSelectedRowModel()
-      .rows.map((row) => row.original.keyword);
     if (selectedKeywords.length > 0) {
       addMutation.mutate(selectedKeywords);
     }
   };
 
+  const panelTable = (
+    <PanelSuggestionsTable
+      table={panelSelection.table}
+      anchorRef={panelSelection.anchorRef}
+    />
+  );
+  const footer = (
+    <SuggestionsFooter
+      selectedCount={selectedCount}
+      totalCount={totalCount}
+      pending={addMutation.isPending}
+      onSkip={onClose}
+      onAdd={handleAdd}
+    />
+  );
+
   if (!labsSupported) {
+    if (panelsPending) {
+      return (
+        <>
+          <StepHeader title="Finding queries from your connected panels..." />
+          <div className="flex flex-col items-center justify-center py-16">
+            <Spinner label="This usually takes a few seconds" />
+          </div>
+        </>
+      );
+    }
+    if (panelsQuery.isError || panelSources.length === 0) {
+      return (
+        <>
+          <StepHeader
+            title="Add keywords manually"
+            description="Ranked-keyword suggestions aren't available for this country. Continue and add the keywords you want to track manually."
+          />
+          <ConnectPanelsHint projectId={projectId} />
+          <DialogFooter>
+            <Button onClick={onClose}>Continue</Button>
+          </DialogFooter>
+        </>
+      );
+    }
+    if (panelSuggestions.length === 0) {
+      return (
+        <>
+          <StepHeader
+            title="No new queries found"
+            description="Every query your connected panels reported is already tracked in this project. Continue and add keywords manually."
+          />
+          <DialogFooter>
+            <Button onClick={onClose}>Continue</Button>
+          </DialogFooter>
+        </>
+      );
+    }
     return (
       <>
         <StepHeader
-          title="Add keywords manually"
-          description="Ranked-keyword suggestions aren't available for this country. Continue and add the keywords you want to track manually."
+          title="Choose keywords to track"
+          description={`Top queries ${domain} already shows up for in your connected panels.`}
         />
-        <DialogFooter>
-          <Button onClick={onClose}>Continue</Button>
-        </DialogFooter>
+        {panelTable}
+        {footer}
       </>
     );
   }
@@ -256,30 +229,58 @@ export function KeywordSuggestionStep({
     );
   }
 
-  if (suggestionsQuery.isError) {
+  // Labs failed or found nothing — panels may still have queries, so wait for
+  // them before declaring the step empty.
+  if (data.length === 0 || suggestionsQuery.isError) {
+    if (panelsPending) {
+      return (
+        <>
+          <StepHeader
+            title={
+              suggestionsQuery.isError
+                ? "Couldn't fetch keywords"
+                : "No rankings found"
+            }
+            description="You can skip this step and add keywords manually later."
+          />
+          <div className="flex flex-col items-center justify-center py-16">
+            <Spinner label="Checking your connected panels..." />
+          </div>
+        </>
+      );
+    }
+    if (panelSuggestions.length === 0) {
+      return (
+        <>
+          <StepHeader
+            title={
+              suggestionsQuery.isError
+                ? "Couldn't fetch keywords"
+                : "No rankings found"
+            }
+            description={
+              suggestionsQuery.isError
+                ? "You can skip this step and add keywords manually later."
+                : `We couldn't find any keywords ${domain} currently ranks for. You can add keywords manually.`
+            }
+          />
+          {panelSources.length === 0 ? (
+            <ConnectPanelsHint projectId={projectId} />
+          ) : null}
+          <DialogFooter>
+            <Button onClick={onClose}>Skip</Button>
+          </DialogFooter>
+        </>
+      );
+    }
     return (
       <>
         <StepHeader
-          title="Couldn't fetch keywords"
-          description="You can skip this step and add keywords manually later."
+          title="Choose keywords to track"
+          description={`We couldn't find ranked keywords for ${domain}, but your connected panels report these queries.`}
         />
-        <DialogFooter>
-          <Button onClick={onClose}>Skip</Button>
-        </DialogFooter>
-      </>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <>
-        <StepHeader
-          title="No rankings found"
-          description={`We couldn't find any keywords ${domain} currently ranks for. You can add keywords manually.`}
-        />
-        <DialogFooter>
-          <Button onClick={onClose}>Skip</Button>
-        </DialogFooter>
+        {panelTable}
+        {footer}
       </>
     );
   }
@@ -303,24 +304,44 @@ export function KeywordSuggestionStep({
         }}
       />
 
-      <DialogFooter className="items-center sm:justify-between">
-        <p className="text-xs text-muted-foreground">
-          {selectedCount} of {data.length} selected
-        </p>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            Skip
-          </Button>
-          <Button
-            onClick={handleAdd}
-            pending={addMutation.isPending}
-            disabled={selectedCount === 0}
-          >
-            Save Keyword{selectedCount !== 1 ? "s" : ""}
-          </Button>
-        </div>
-      </DialogFooter>
+      {panelSuggestions.length > 0 ? panelTable : null}
+
+      {footer}
     </>
+  );
+}
+
+function SuggestionsFooter({
+  selectedCount,
+  totalCount,
+  pending,
+  onSkip,
+  onAdd,
+}: {
+  selectedCount: number;
+  totalCount: number;
+  pending: boolean;
+  onSkip: () => void;
+  onAdd: () => void;
+}) {
+  return (
+    <DialogFooter className="items-center sm:justify-between">
+      <p className="text-xs text-muted-foreground">
+        {selectedCount} of {totalCount} selected
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" onClick={onSkip}>
+          Skip
+        </Button>
+        <Button
+          onClick={onAdd}
+          pending={pending}
+          disabled={selectedCount === 0}
+        >
+          Save Keyword{selectedCount !== 1 ? "s" : ""}
+        </Button>
+      </div>
+    </DialogFooter>
   );
 }
 

@@ -22,9 +22,12 @@ import {
   localizeResearchRows,
 } from "./local-volume";
 import {
+  fetchGoogleAdsIdeaRows,
   fetchGoogleAdsResearchRows,
   fetchResearchRowsBySource,
+  fetchWordstatResearchRows,
 } from "./research-data";
+import { getSeoProviderStatuses } from "@/server/lib/seo-providers/providers";
 import {
   MIN_NON_SEED_FOR_AUTO,
   countNonSeedKeywords,
@@ -65,7 +68,14 @@ const cachedKeywordRowSchema = z.object({
 
 const cachedResultSchema = z.object({
   rows: z.array(cachedKeywordRowSchema),
-  source: z.enum(["related", "suggestions", "ideas", "google_ads", "blended"]),
+  source: z.enum([
+    "related",
+    "suggestions",
+    "ideas",
+    "google_ads",
+    "wordstat",
+    "blended",
+  ]),
   usedFallback: z.boolean(),
 });
 
@@ -187,6 +197,25 @@ async function fetchGoogleAdsRows(
   return { rows, source: "google_ads", usedFallback: false };
 }
 
+/**
+ * Russia rows: Wordstat top requests containing the seed. locationName on a
+ * wordstat request carries the Yandex region id (region picker convention) —
+ * regional demand is served directly by Wordstat, not by a local overlay.
+ */
+async function fetchWordstatRows(
+  input: ResolvedResearchKeywordsInput,
+  seedKeyword: string,
+): Promise<ResearchResult> {
+  const rows = await fetchWordstatResearchRows({
+    seedKeyword,
+    locationCode: input.locationCode,
+    languageCode: input.languageCode,
+    resultLimit: input.resultLimit,
+    region: input.locationName,
+  });
+  return { rows, source: "wordstat", usedFallback: false };
+}
+
 async function fetchManualRows(
   mode: Exclude<KeywordMode, "auto">,
   input: ResolvedResearchKeywordsInput,
@@ -270,12 +299,19 @@ export async function research(
 
   const seedKeyword = uniqueKeywords[0];
   const provider = getKeywordDataProvider(input.locationCode);
+  // China has no keyword-volume source at all. Fail before any paid call with
+  // an actionable message — rank tracking and SERP analysis still work there.
+  if (provider === "none") {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "Keyword research is not available for this market yet. Rank tracking and SERP analysis still work here.",
+    );
+  }
   // Labs source modes, clickstream, and synonym filtering don't exist for
-  // Google-Ads-served countries; normalize them so equivalent requests share
-  // one cache entry. Local volume replaces the clickstream volume, so a local
-  // request never pays for clickstream.
+  // Google-Ads- or Wordstat-served countries; normalize them so equivalent
+  // requests share one cache entry.
   const effectiveInput: ResolvedResearchKeywordsInput =
-    provider === "google_ads"
+    provider === "google_ads" || provider === "wordstat"
       ? { ...input, mode: "auto", clickstream: false, groupKeywords: false }
       : input.locationName
         ? { ...input, clickstream: false }
@@ -298,34 +334,65 @@ export async function research(
     return cached;
   }
 
-  const result = effectiveInput.locationName
-    ? await researchLocal(
-        effectiveInput,
-        effectiveInput.locationName,
-        billingCustomer,
-        creditFeature,
-      )
-    : provider === "google_ads"
-      ? await fetchGoogleAdsRows(
-          effectiveInput,
-          seedKeyword,
-          billingCustomer,
-          creditFeature,
-        )
-      : mode === "auto"
-        ? await fetchAutoRows(
-            effectiveInput,
-            seedKeyword,
-            billingCustomer,
-            creditFeature,
-          )
-        : await fetchManualRows(
-            mode,
-            effectiveInput,
-            seedKeyword,
-            billingCustomer,
-            creditFeature,
-          );
+  // Western markets without the incumbent's key: the operator's own Google
+  // Ads API supplies BOTH the idea list and the volumes (decisions §8) —
+  // research keeps working with no DataForSEO account at all.
+  const providerStatuses = await getSeoProviderStatuses();
+  if (provider === "wordstat" && !providerStatuses.yandex) {
+    // Same gate as the volume path: fail with the missing credentials named,
+    // before any paid call.
+    throw new AppError(
+      "UPSTREAM_UNAVAILABLE",
+      "Russia keyword research needs Yandex Search API credentials (YANDEX_SEARCH_API_KEY + YANDEX_FOLDER_ID)",
+    );
+  }
+  const googleAdsFallback =
+    (provider === "labs" || provider === "google_ads") &&
+    !providerStatuses.dataforseo &&
+    providerStatuses.googleads;
+
+  const result =
+    provider === "wordstat"
+      ? await fetchWordstatRows(effectiveInput, seedKeyword)
+      : googleAdsFallback
+        ? {
+            rows: await fetchGoogleAdsIdeaRows({
+              seedKeyword,
+              locationCode: effectiveInput.locationCode,
+              languageCode: effectiveInput.languageCode,
+              resultLimit: effectiveInput.resultLimit,
+            }),
+            source: "google_ads" as const,
+            usedFallback: true,
+          }
+        : effectiveInput.locationName
+          ? await researchLocal(
+              effectiveInput,
+              effectiveInput.locationName,
+              billingCustomer,
+              creditFeature,
+            )
+          : provider === "google_ads"
+            ? await fetchGoogleAdsRows(
+                effectiveInput,
+                seedKeyword,
+                billingCustomer,
+                creditFeature,
+              )
+            : mode === "auto"
+              ? await fetchAutoRows(
+                  effectiveInput,
+                  seedKeyword,
+                  billingCustomer,
+                  creditFeature,
+                )
+              : await fetchManualRows(
+                  mode,
+                  effectiveInput,
+                  seedKeyword,
+                  billingCustomer,
+                  creditFeature,
+                );
 
   await setCached(cacheKey, result, CACHE_TTL.researchResult);
   // Keyword metrics are stored per country, so local rows are not persisted.

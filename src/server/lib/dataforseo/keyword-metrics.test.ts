@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fetchKeywordMetricsForList } from "./keyword-metrics";
+import { AppError } from "@/server/lib/errors";
 
 type Client = Parameters<typeof fetchKeywordMetricsForList>[0];
 
@@ -14,6 +15,10 @@ function fakeClient(overrides: {
     keywords: { adsSearchVolume: overrides.adsSearchVolume ?? vi.fn() },
   };
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("fetchKeywordMetricsForList", () => {
   it("normalizes Labs items and prefers clickstream-refined volume/trend", async () => {
@@ -221,5 +226,24 @@ describe("fetchKeywordMetricsForList", () => {
       searchVolume: null,
       keywordDifficulty: null,
     });
+  });
+
+  it("gates the Russia market on Yandex credentials with an actionable error", async () => {
+    vi.stubEnv("YANDEX_SEARCH_API_KEY", "");
+    vi.stubEnv("YANDEX_FOLDER_ID", "");
+
+    await expect(
+      fetchKeywordMetricsForList(fakeClient({}), {
+        keywords: ["кроссовки"],
+        locationCode: 643,
+        languageCode: "ru",
+        creditFeature: "rank_tracking",
+      }),
+    ).rejects.toSatisfy(
+      (error) =>
+        error instanceof AppError &&
+        error.code === "UPSTREAM_UNAVAILABLE" &&
+        error.message.includes("YANDEX_SEARCH_API_KEY"),
+    );
   });
 });

@@ -223,6 +223,14 @@ export const rankTrackingConfigs = sqliteTable(
     domain: text("domain").notNull(),
     locationCode: integer("location_code").notNull().default(2840),
     languageCode: text("language_code").notNull().default("en"),
+    // One tracker tracks exactly one engine; pre-migration rows are google.
+    // Uniqueness is per engine — the same domain/market can track google and
+    // yandex side by side.
+    searchEngine: text("search_engine", {
+      enum: ["google", "yandex", "baidu", "bing"],
+    })
+      .notNull()
+      .default("google"),
     devices: text("devices", {
       enum: ["both", "desktop", "mobile"],
     })
@@ -250,7 +258,13 @@ export const rankTrackingConfigs = sqliteTable(
       table.createdAt,
     ),
     uniqueIndex("rank_tracking_configs_national_idx")
-      .on(table.projectId, table.domain, table.locationCode, table.languageCode)
+      .on(
+        table.projectId,
+        table.domain,
+        table.locationCode,
+        table.languageCode,
+        table.searchEngine,
+      )
       .where(sql`${table.locationName} IS NULL`),
     uniqueIndex("rank_tracking_configs_local_idx")
       .on(
@@ -259,6 +273,7 @@ export const rankTrackingConfigs = sqliteTable(
         table.locationCode,
         table.languageCode,
         table.locationName,
+        table.searchEngine,
       )
       .where(sql`${table.locationName} IS NOT NULL`),
   ],

@@ -16,6 +16,8 @@ export type SaveConfigInput = {
   serpDepth: number;
   locationCode: number;
   languageCode: string;
+  // Engine is chosen at create only; updates never send it (immutable).
+  searchEngine?: RankTrackingConfig["searchEngine"];
   targetingMode: "national" | "local";
   locationName: string | undefined;
   schedule: RankTrackingConfig["scheduleInterval"];
@@ -48,6 +50,7 @@ export function useSaveConfigMutations(input: {
         data: {
           projectId,
           ...commonFields(fields),
+          searchEngine: fields.searchEngine,
           locationName:
             fields.targetingMode === "local" ? fields.locationName : undefined,
         },

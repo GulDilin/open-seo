@@ -2,14 +2,14 @@ import { and, eq, gt, like, lt } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { verification } from "@/db/schema";
-import type { GoogleLinkProvider } from "@/shared/google-link";
 
 /**
- * Single-use OAuth state and PKCE for the Google data-grant flow
- * (googleOAuth.ts). The state is a random nonce whose payload lives in Better
- * Auth's `verification` table and is deleted the moment a callback presents
- * it, so a captured consent URL cannot be replayed. The PKCE verifier is an
- * HMAC of that nonce.
+ * Single-use OAuth state and PKCE for the incremental data-grant flows
+ * (googleOAuth.ts, yandexOAuth.ts). The state is a random nonce whose payload
+ * lives in Better Auth's `verification` table and is deleted the moment a
+ * callback presents it, so a captured consent URL cannot be replayed. The PKCE
+ * verifier is an HMAC of that nonce. `provider` only namespaces the stored
+ * identifier and salts the HMAC, so any feature-local provider key works.
  */
 
 const STATE_TTL_MS = 10 * 60 * 1_000;
@@ -29,14 +29,14 @@ function bytesToBase64Url(bytes: Uint8Array) {
     .replaceAll("=", "");
 }
 
-function stateIdentifier(provider: GoogleLinkProvider, state: string) {
+function stateIdentifier(provider: string, state: string) {
   return `${STATE_IDENTIFIER_PREFIX}${provider}:${state}`;
 }
 
 export async function getCodeVerifier(input: {
   state: string;
   clientSecret: string;
-  provider: GoogleLinkProvider;
+  provider: string;
 }) {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -63,9 +63,9 @@ export async function getCodeChallenge(verifier: string) {
   return bytesToBase64Url(new Uint8Array(digest));
 }
 
-/** Persist a fresh state and return the nonce to send to Google. */
+/** Persist a fresh state and return the nonce to send to the provider. */
 export async function createState(input: {
-  provider: GoogleLinkProvider;
+  provider: string;
   userId: string;
   callbackPath: string;
 }) {
@@ -100,7 +100,7 @@ export async function createState(input: {
  */
 export async function consumeState(input: {
   state: string | null;
-  provider: GoogleLinkProvider;
+  provider: string;
 }) {
   if (!input.state) return null;
   const [row] = await db

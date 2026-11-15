@@ -1,15 +1,19 @@
-import { getAuth, hasHostedAuthConfig } from "@/lib/auth";
+import { getAuth, hasSessionAuthConfig } from "@/lib/auth";
 import { getActiveOrganizationId } from "@/lib/auth-session";
 import { AuthRepository } from "@/server/auth/repositories/AuthRepository";
 import { resolveActiveHostedOrganization } from "@/server/auth/default-hosted-organization";
 import { AppError } from "@/server/lib/errors";
 import type { EnsuredUserContext } from "./types";
 
+// Despite the name this resolver serves BOTH session-auth modes — hosted and
+// self-hosted oauth (spec 016): Better Auth session → user → default
+// organization → role. Only how users authenticate at the provider differs.
+
 async function requireHostedSession(headers: Headers) {
-  if (!hasHostedAuthConfig()) {
+  if (!hasSessionAuthConfig()) {
     throw new AppError(
       "AUTH_CONFIG_MISSING",
-      "Missing Better Auth hosted configuration",
+      "Missing Better Auth configuration for session auth",
     );
   }
 

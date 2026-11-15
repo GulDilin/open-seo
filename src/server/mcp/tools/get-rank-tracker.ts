@@ -59,8 +59,9 @@ function formatLocation(code: unknown, name: unknown): string {
 const CONFIG_COLUMNS: McpTableColumn<unknown>[] = [
   { header: "domain", value: (row) => readPath(row, "domain") },
   {
-    // locationName is part of a tracker's uniqueness key — without it two city
-    // trackers on the same domain and country are indistinguishable.
+    // locationName and searchEngine are parts of a tracker's uniqueness key —
+    // without them two trackers on the same domain and country are
+    // indistinguishable.
     header: "location",
     value: (row) =>
       formatLocation(
@@ -69,6 +70,7 @@ const CONFIG_COLUMNS: McpTableColumn<unknown>[] = [
       ),
   },
   { header: "lang", value: (row) => readPath(row, "languageCode") },
+  { header: "engine", value: (row) => readPath(row, "searchEngine") },
   { header: "devices", value: (row) => readPath(row, "devices") },
   { header: "depth", value: (row) => readPath(row, "serpDepth") },
   { header: "schedule", value: (row) => readPath(row, "scheduleInterval") },

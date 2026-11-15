@@ -12,6 +12,7 @@ import {
   useAuthPageState,
 } from "@/client/features/auth/AuthPage";
 import { useGoogleAuth } from "@/client/features/auth/useGoogleAuth";
+import { useSsoSignIn } from "@/client/features/auth/useSsoSignIn";
 import { getFormError } from "@/client/lib/forms";
 import { captureClientEvent } from "@/client/lib/posthog";
 import { authClient } from "@/lib/auth-client";
@@ -35,11 +36,12 @@ export const Route = createFileRoute("/_auth/sign-in")({
 function SignInPage() {
   const search = Route.useSearch();
   const navigate = useNavigate();
-  const { redirectTo, oauthQuery, isHostedMode } = useAuthPageState(
-    search.redirect,
-  );
+  const { redirectTo, oauthQuery, isHostedMode, isSelfHostedOAuthMode } =
+    useAuthPageState(search.redirect);
   const [showEmailForm, setShowEmailForm] = useState(false);
   const google = useGoogleAuth({ redirectTo });
+  // oauth mode: one button, the operator's OIDC IdP (spec 016).
+  const sso = useSsoSignIn({ redirectTo });
 
   const form = useAppForm({
     defaultValues: {
@@ -135,23 +137,47 @@ function SignInPage() {
     >
       {!showEmailForm ? (
         <>
-          <AuthMethodChooser
-            googleLabel="Continue with Google"
-            disabled={!isHostedMode}
-            isBusy={google.isStarting}
-            onContinueWithGoogle={() => {
-              void google.start();
-            }}
-            onContinueWithEmail={() => {
-              setShowEmailForm(true);
-              google.clearError();
-            }}
-          />
+          {isSelfHostedOAuthMode ? (
+            // oauth mode: a single button for the operator's OIDC IdP; a
+            // misconfigured deployment never reaches here (preflight aborts
+            // the boot naming the missing variable).
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full bg-card font-semibold dark:border-border dark:bg-card"
+                onClick={() => {
+                  void sso.start();
+                }}
+                disabled={sso.isStarting}
+              >
+                {sso.isStarting ? "Opening sign-in…" : "Continue with SSO"}
+              </Button>
+              {sso.error ? (
+                <p className="text-sm text-destructive">{sso.error}</p>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <AuthMethodChooser
+                googleLabel="Continue with Google"
+                disabled={!isHostedMode}
+                isBusy={google.isStarting}
+                onContinueWithGoogle={() => {
+                  void google.start();
+                }}
+                onContinueWithEmail={() => {
+                  setShowEmailForm(true);
+                  google.clearError();
+                }}
+              />
+              {google.error ? (
+                <p className="text-sm text-destructive">{google.error}</p>
+              ) : null}
+            </>
+          )}
           {isHostedMode ? (
             <TermsAgreementNotice action="By continuing with Google" />
-          ) : null}
-          {google.error ? (
-            <p className="text-sm text-destructive">{google.error}</p>
           ) : null}
         </>
       ) : (

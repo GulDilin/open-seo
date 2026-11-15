@@ -52,7 +52,22 @@ export function getIsoCountryCode(locationCode: number): string {
   return (ISO_COUNTRY_OVERRIDES[shortLabel] ?? shortLabel).toLowerCase();
 }
 
-type KeywordDataProvider = "labs" | "google_ads";
+/**
+ * Inverse of getIsoCountryCode: the numeric market code for a lowercase ISO
+ * alpha-2 country (used by providers that key on ISO, e.g. Google Ads
+ * volumes). null for unknown codes.
+ */
+export function getLocationCodeForIsoCountry(iso: string): number | null {
+  return (
+    LOCATION_OPTIONS.find((option) => {
+      const short =
+        ISO_COUNTRY_OVERRIDES[option.shortLabel] ?? option.shortLabel;
+      return short.toLowerCase() === iso;
+    })?.code ?? null
+  );
+}
+
+type KeywordDataProvider = "labs" | "google_ads" | "wordstat" | "none";
 
 type LocationOption = {
   code: number;
@@ -61,6 +76,12 @@ type LocationOption = {
   languageCode: string;
   /** Set when DataForSEO Labs does not support this country. */
   googleAdsOnly?: true;
+  /**
+   * Keyword-volume source for non-Labs/non-Ads markets: "wordstat" (Yandex,
+   * served by the yandex provider once its phase ships), "none" (no source).
+   * Absent means the Labs↔google_ads routing below applies.
+   */
+  keywordProvider?: "wordstat" | "none";
 };
 
 export const LOCATION_OPTIONS: readonly LocationOption[] = [
@@ -131,6 +152,15 @@ export const LOCATION_OPTIONS: readonly LocationOption[] = [
   { code: 2120, label: "Cameroon", shortLabel: "CM", languageCode: "fr" },
   { code: 2124, label: "Canada", shortLabel: "CA", languageCode: "en" },
   { code: 2152, label: "Chile", shortLabel: "CL", languageCode: "es" },
+  {
+    // ISO 3166-1 numeric, not a DataForSEO code — China has no DataForSEO
+    // market. Keyword volume has no source (Baidu positions only).
+    code: 156,
+    label: "China",
+    shortLabel: "CN",
+    languageCode: "zh-CN",
+    keywordProvider: "none",
+  },
   { code: 2170, label: "Colombia", shortLabel: "CO", languageCode: "es" },
   { code: 2188, label: "Costa Rica", shortLabel: "CR", languageCode: "es" },
   { code: 2384, label: "Cote d'Ivoire", shortLabel: "CI", languageCode: "fr" },
@@ -417,6 +447,16 @@ export const LOCATION_OPTIONS: readonly LocationOption[] = [
   },
   { code: 2642, label: "Romania", shortLabel: "RO", languageCode: "ro" },
   {
+    // ISO 3166-1 numeric, not a DataForSEO code — DataForSEO removed Russia
+    // in 2022. Volumes come from Yandex Wordstat (the yandex provider phase);
+    // engines offered are declared in search-engines.ts.
+    code: 643,
+    label: "Russia",
+    shortLabel: "RU",
+    languageCode: "ru",
+    keywordProvider: "wordstat",
+  },
+  {
     code: 2646,
     label: "Rwanda",
     shortLabel: "RW",
@@ -678,7 +718,7 @@ export const SERP_LANGUAGE_OPTIONS = [
 ] as const;
 /** Countries usable by DataForSEO Labs features (domain overview etc.). */
 export const LABS_LOCATION_OPTIONS = LOCATION_OPTIONS.filter(
-  (option) => !option.googleAdsOnly,
+  (option) => !option.googleAdsOnly && !option.keywordProvider,
 );
 
 const LOCATION_CODES = new Set<number>(
@@ -855,8 +895,11 @@ export function isLabsLocationCode(locationCode: number): boolean {
 export function getKeywordDataProvider(
   locationCode: number,
 ): KeywordDataProvider {
-  return LOCATION_CODES.has(locationCode) &&
-    !LABS_LOCATION_CODES.has(locationCode)
+  const market = LOCATION_OPTIONS.find((o) => o.code === locationCode);
+  if (market?.keywordProvider) {
+    return market.keywordProvider;
+  }
+  return market && !LABS_LOCATION_CODES.has(locationCode)
     ? "google_ads"
     : "labs";
 }

@@ -264,6 +264,7 @@ export function RankTrackingDomainDetail({
             <AddKeywordsPanel
               configId={config.id}
               projectId={projectId}
+              domain={config.domain}
               onSuccess={handleKeywordsAdded}
               onCancel={() => setShowAddKeywords(false)}
             />

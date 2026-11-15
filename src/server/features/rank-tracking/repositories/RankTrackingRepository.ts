@@ -19,6 +19,7 @@ import {
 } from "@/db/schema";
 import { DB_BATCH_SIZE, executeInBatches } from "@/db/runBatch";
 import type { RankTrackingSkipReason } from "@/shared/rank-tracking";
+import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
 import {
   getLatestSnapshotsForKeywords,
   getBestPositionsForKeywords,
@@ -78,28 +79,31 @@ async function getConfigById({
   return rows[0] ?? null;
 }
 
-async function getConfigByProjectDomainMarket(
-  projectId: string,
-  domain: string,
-  locationCode: number,
-  languageCode: string,
-  locationName: string | null,
-) {
+async function getConfigByProjectDomainMarket(market: {
+  projectId: string;
+  domain: string;
+  locationCode: number;
+  languageCode: string;
+  locationName: string | null;
+  searchEngine: RankTrackingConfig["searchEngine"];
+}) {
   const rows = await db
     .select()
     .from(rankTrackingConfigs)
     .where(
       and(
-        eq(rankTrackingConfigs.projectId, projectId),
-        eq(rankTrackingConfigs.domain, domain),
-        eq(rankTrackingConfigs.locationCode, locationCode),
-        eq(rankTrackingConfigs.languageCode, languageCode),
+        eq(rankTrackingConfigs.projectId, market.projectId),
+        eq(rankTrackingConfigs.domain, market.domain),
+        eq(rankTrackingConfigs.locationCode, market.locationCode),
+        eq(rankTrackingConfigs.languageCode, market.languageCode),
         // National (NULL) and per-city configs are distinct rows — mirrors
         // the partial unique indexes, so a national config and any number of
-        // city configs can coexist for the same domain.
-        locationName === null
+        // city configs can coexist for the same domain. Engines are distinct
+        // the same way: one row per (…, engine).
+        market.locationName === null
           ? isNull(rankTrackingConfigs.locationName)
-          : eq(rankTrackingConfigs.locationName, locationName),
+          : eq(rankTrackingConfigs.locationName, market.locationName),
+        eq(rankTrackingConfigs.searchEngine, market.searchEngine),
       ),
     )
     .limit(1);
@@ -142,6 +146,7 @@ async function getDueConfigsWithOrganization(nowIso: string) {
         domain: rankTrackingConfigs.domain,
         locationCode: rankTrackingConfigs.locationCode,
         languageCode: rankTrackingConfigs.languageCode,
+        searchEngine: rankTrackingConfigs.searchEngine,
         locationName: rankTrackingConfigs.locationName,
         devices: rankTrackingConfigs.devices,
         serpDepth: rankTrackingConfigs.serpDepth,
@@ -221,6 +226,24 @@ async function getKeywordsForConfig(configId: string) {
     .from(rankTrackingKeywords)
     .where(eq(rankTrackingKeywords.configId, configId))
     .orderBy(rankTrackingKeywords.createdAt);
+}
+
+/** Distinct keywords across a project's active configs — the pool suggestion
+ *  sources subtract so already-tracked keywords are never re-suggested. */
+async function getKeywordsForActiveConfigs(projectId: string) {
+  return db
+    .selectDistinct({ keyword: rankTrackingKeywords.keyword })
+    .from(rankTrackingKeywords)
+    .innerJoin(
+      rankTrackingConfigs,
+      eq(rankTrackingKeywords.configId, rankTrackingConfigs.id),
+    )
+    .where(
+      and(
+        eq(rankTrackingConfigs.projectId, projectId),
+        eq(rankTrackingConfigs.isActive, true),
+      ),
+    );
 }
 
 async function addKeywordsToConfig(
@@ -411,6 +434,7 @@ export const RankTrackingRepository = {
   deleteNotFoundSnapshots,
   getSnapshotsForRun,
   getKeywordsForConfig,
+  getKeywordsForActiveConfigs,
   addKeywordsToConfig,
   removeKeywordsFromConfig,
   setKeywordsPinned,

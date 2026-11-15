@@ -70,6 +70,26 @@ export const estimateRankTrackerCostTool = {
     },
   },
   handler: withMcpProjectAuth(async (args: Args, context) => {
+    // Non-google engines run on their own providers, not the credit-metered
+    // DataForSEO path, so a credit estimate would be fiction. Say so instead.
+    const tracker = (
+      await RankTrackingService.getTracker(args.trackerId, args.projectId)
+    ).config;
+    if (tracker.searchEngine !== "google") {
+      return mcpResponse({
+        text: `Tracker ${args.trackerId} tracks ${tracker.searchEngine}. Its checks run on the operator's ${tracker.searchEngine} provider (not DataForSEO credits), so no credit estimate applies — the provider bills its own per-check price. No check was started.`,
+        meta: buildProjectMeta(
+          context,
+          args.projectId,
+          `/p/${args.projectId}/rank-tracking/${args.trackerId}`,
+        ),
+        structuredContent: {
+          trackerId: args.trackerId,
+          searchEngine: tracker.searchEngine,
+          providerPriced: true,
+        },
+      });
+    }
     const estimate = await RankTrackingService.estimateCost(
       args.trackerId,
       args.projectId,

@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- the tracker service object: config create/update share the market+engine validation seam and checks share the billing gate */
 import { env } from "cloudflare:workers";
 import {
   customerHasPaidPlan,
@@ -11,6 +12,7 @@ import { RankTrackingRepository } from "@/server/features/rank-tracking/reposito
 import { assertSerpLocationNameAccepted } from "@/server/lib/dataforseo/serp-location-validate";
 import { AppError } from "@/server/lib/errors";
 import { isHostedServerAuthMode } from "@/server/lib/runtime-env";
+import { getSeoProviderStatuses } from "@/server/lib/seo-providers/providers";
 import type {
   RankCheckScheduleTime,
   RankTrackingConfig,
@@ -28,9 +30,14 @@ import {
 import { resolveNextCheckAt } from "./configSchedule";
 import {
   getIsoCountryCode,
+  getKeywordDataProvider,
   resolveKeywordDataLanguage,
   resolveMarket,
 } from "@/shared/keyword-locations";
+import {
+  enginesForCountry,
+  isEngineAvailableForCountry,
+} from "@/shared/search-engines";
 import { getLatestResults } from "./rankTrackingResults";
 import { toRankTrackingTimestamp } from "@/server/features/rank-tracking/rankTrackingTimestamps";
 import { RankTrackingKeywordService } from "./RankTrackingKeywordService";
@@ -46,6 +53,7 @@ async function createConfig(input: {
   locationCode?: number;
   languageCode?: string;
   locationName?: string;
+  searchEngine?: RankTrackingConfig["searchEngine"];
   devices?: RankTrackingConfig["devices"];
   serpDepth: number;
   scheduleInterval?: RankTrackingConfig["scheduleInterval"];
@@ -57,13 +65,46 @@ async function createConfig(input: {
     input,
     input.projectMarket,
   );
+  const searchEngine = input.searchEngine ?? "google";
+  // Checked after market resolution (locationCode may default) and before any
+  // paid call — the engine list is the product's own availability table.
+  if (!isEngineAvailableForCountry(locationCode, searchEngine)) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      `Search engine "${searchEngine}" is not offered for this market. Supported: ${enginesForCountry(locationCode).join(", ")}`,
+    );
+  }
+  // google on a market DataForSEO does not cover (Russia, China) can only be
+  // served by Serper — fail at creation with the credential named instead of
+  // every check dying later on a DataForSEO rejection.
+  const marketProvider = getKeywordDataProvider(locationCode);
+  if (
+    searchEngine === "google" &&
+    (marketProvider === "wordstat" || marketProvider === "none") &&
+    !(await getSeoProviderStatuses()).serper
+  ) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      `Google tracking for this market requires SERPER_API_KEY (DataForSEO does not serve it).`,
+    );
+  }
   const scheduleInterval = input.scheduleInterval ?? "weekly";
   const nextCheckAt = resolveNextCheckAt(scheduleInterval, input.scheduleTime);
 
   const locationName = input.locationName ?? null;
+  // City targeting is a google-only feature today: the other engines' region
+  // handling (e.g. a Yandex region id) is not city-level local search.
+  if (locationName && searchEngine !== "google") {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "Local (city) targeting is currently supported for Google trackers only",
+    );
+  }
   // Before the duplicate/limit checks so an unusable location name is the
-  // error the caller sees.
-  if (locationName) {
+  // error the caller sees. The sandbox check is DataForSEO's — non-google
+  // engines validate their region differently (yandex: numeric region id in
+  // getRegionsTree), so they skip it here.
+  if (locationName && searchEngine === "google") {
     await assertSerpLocationNameAccepted({
       locationName,
       languageCode,
@@ -71,24 +112,25 @@ async function createConfig(input: {
     });
   }
 
-  const existing = await RankTrackingRepository.getConfigByProjectDomainMarket(
-    input.projectId,
-    normalizedDomain,
+  const existing = await RankTrackingRepository.getConfigByProjectDomainMarket({
+    projectId: input.projectId,
+    domain: normalizedDomain,
     locationCode,
     languageCode,
     locationName,
-  );
-  // The (project, domain, location, language) row still exists when a domain is
-  // archived — archiving only flips isActive to false. So re-adding an
-  // archived domain reactivates that row (keeping its keyword/ranking
+    searchEngine,
+  });
+  // The (project, domain, location, language, engine) row still exists when a
+  // domain is archived — archiving only flips isActive to false. So re-adding
+  // an archived domain reactivates that row (keeping its keyword/ranking
   // history) with the freshly chosen settings, rather than colliding with
   // the unique index. An already-active row is a genuine duplicate.
   if (existing?.isActive) {
     throw new AppError(
       "VALIDATION_ERROR",
       locationName
-        ? "This domain + city + language combination is already being tracked"
-        : "This domain + country + language combination is already being tracked",
+        ? `This domain + city + language combination is already being tracked on ${searchEngine}`
+        : `This domain + country + language combination is already being tracked on ${searchEngine}`,
     );
   }
 
@@ -126,6 +168,7 @@ async function createConfig(input: {
     domain: normalizedDomain,
     locationCode,
     languageCode,
+    searchEngine,
     locationName,
     devices: input.devices ?? "both",
     serpDepth: input.serpDepth,
@@ -160,6 +203,36 @@ async function updateConfig(
   const { scheduleTime, ...fields } = input;
   const updates: typeof fields & { nextCheckAt?: string | null } = {};
   const existing = await getValidatedConfig(configId, projectId);
+
+  // Same availability table as createConfig: moving a config to a country
+  // its engine cannot serve must fail before any write, naming the engines
+  // that market offers. The engine itself is immutable here, so only a
+  // country change can break the pair.
+  if (
+    input.locationCode !== undefined &&
+    !isEngineAvailableForCountry(input.locationCode, existing.searchEngine)
+  ) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      `Search engine "${existing.searchEngine}" is not offered for this market. Supported: ${enginesForCountry(input.locationCode).join(", ")}`,
+    );
+  }
+  // Same google-RU gate as createConfig: google on a market DataForSEO does
+  // not cover needs Serper — say so instead of letting checks fail on the
+  // incumbent later.
+  if (
+    existing.searchEngine === "google" &&
+    (input.locationCode ?? existing.locationCode) !== undefined &&
+    ["wordstat", "none"].includes(
+      getKeywordDataProvider(input.locationCode ?? existing.locationCode),
+    ) &&
+    !(await getSeoProviderStatuses()).serper
+  ) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "Google tracking for this market requires SERPER_API_KEY (DataForSEO does not serve it).",
+    );
+  }
 
   // A location name is only valid together with its market, so re-check the
   // resulting (name, language, country) whenever any of the three changes.

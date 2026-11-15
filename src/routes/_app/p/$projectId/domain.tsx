@@ -5,6 +5,10 @@ import {
 } from "@tanstack/react-router";
 import { DomainOverviewPage } from "@/client/features/domain/DomainOverviewPage";
 import {
+  DataForSeoRequiredBadge,
+  useSeoProviderSetup,
+} from "@/client/components/ProviderRequiredBadge";
+import {
   DEFAULT_DOMAIN_KEYWORDS_PAGE_SIZE,
   domainSearchSchema,
 } from "@/types/schemas/domain";
@@ -52,18 +56,30 @@ function DomainOverviewRoute() {
   const search = Route.useSearch();
   const projectMarket = useProjectMarket(projectId);
   const routeState = getDomainRouteState(search, projectMarket);
+  // The whole page runs on DataForSEO; without its key every mounted query
+  // would fail server-side. Render the badge instead of the page.
+  const setup = useSeoProviderSetup();
+  if (setup.data && !setup.data.dataforseo)
+    return (
+      <div className="space-y-3">
+        <DataForSeoRequiredBadge />
+      </div>
+    );
 
   return (
-    <DomainOverviewPage
-      projectId={projectId}
-      onShowRecentSearches={() => {
-        void navigate({
-          search: () => ({}),
-          replace: true,
-        });
-      }}
-      navigate={navigate}
-      routeState={routeState}
-    />
+    <div className="space-y-3">
+      <DataForSeoRequiredBadge />
+      <DomainOverviewPage
+        projectId={projectId}
+        onShowRecentSearches={() => {
+          void navigate({
+            search: () => ({}),
+            replace: true,
+          });
+        }}
+        navigate={navigate}
+        routeState={routeState}
+      />
+    </div>
   );
 }

@@ -1,4 +1,5 @@
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { AppError } from "@/server/lib/errors";
 import type { KeywordResearchRow } from "@/types/keywords";
 import { EMPTY_FILTERS } from "@/client/features/keywords/keywordResearchTypes";
 import { applyKeywordFiltersAndSort } from "@/client/features/keywords/hooks/useKeywordFiltering";
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   cache: new Map<string, string>(),
   fetchRows: vi.fn(),
   adsSearchVolume: vi.fn(),
+  fetchWordstatRows: vi.fn(),
   upsertKeywordMetric: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -39,6 +41,7 @@ vi.mock("./research-data", async (importOriginal) => ({
     .mapAdsKeywordItems,
   fetchResearchRowsBySource: mocks.fetchRows,
   fetchGoogleAdsResearchRows: vi.fn(),
+  fetchWordstatResearchRows: mocks.fetchWordstatRows,
 }));
 vi.mock("@/server/lib/dataforseo", () => ({
   createDataforseoClient: () => ({
@@ -59,6 +62,79 @@ const customer = {
   userId: "user_1",
   userEmail: "user@example.com",
 };
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+it("serves Russia research from wordstat with honest nulls and no DataForSEO calls", async () => {
+  vi.stubEnv("YANDEX_SEARCH_API_KEY", "test-key");
+  vi.stubEnv("YANDEX_FOLDER_ID", "test-folder");
+  mocks.fetchWordstatRows.mockResolvedValue([
+    {
+      keyword: "кроссовки купить",
+      searchVolume: 5400,
+      trend: [],
+      cpc: null,
+      competition: null,
+      keywordDifficulty: null,
+      intent: "unknown",
+    },
+  ]);
+
+  const result = await research(
+    {
+      projectId: "proj_ru",
+      keywords: ["кроссовки"],
+      locationCode: 643,
+      languageCode: "ru",
+      resultLimit: 150,
+      mode: "auto",
+      clickstream: false,
+      groupKeywords: false,
+      filters: EMPTY_FILTERS,
+    } as Parameters<typeof research>[0],
+    customer,
+  );
+
+  expect(result.source).toBe("wordstat");
+  expect(result.rows[0]).toMatchObject({
+    keyword: "кроссовки купить",
+    searchVolume: 5400,
+    cpc: null,
+    keywordDifficulty: null,
+  });
+  expect(mocks.fetchRows).not.toHaveBeenCalled();
+  expect(mocks.adsSearchVolume).not.toHaveBeenCalled();
+});
+
+it("fails Russia research before any paid call when Yandex is not configured", async () => {
+  vi.stubEnv("YANDEX_SEARCH_API_KEY", "");
+  vi.stubEnv("YANDEX_FOLDER_ID", "");
+
+  await expect(
+    research(
+      {
+        projectId: "proj_ru_gate",
+        keywords: ["сапоги"],
+        locationCode: 643,
+        languageCode: "ru",
+        resultLimit: 150,
+        mode: "auto",
+        clickstream: false,
+        groupKeywords: false,
+        filters: EMPTY_FILTERS,
+      } as Parameters<typeof research>[0],
+      customer,
+    ),
+  ).rejects.toSatisfy(
+    (error) =>
+      error instanceof AppError &&
+      error.code === "UPSTREAM_UNAVAILABLE" &&
+      error.message.includes("YANDEX_SEARCH_API_KEY"),
+  );
+  expect(mocks.fetchWordstatRows).not.toHaveBeenCalled();
+});
 
 it("keeps shared-volume keywords independently filterable through research and cache", async () => {
   const seed: KeywordResearchRow = {

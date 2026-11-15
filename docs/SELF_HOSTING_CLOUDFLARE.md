@@ -2,6 +2,8 @@
 
 Host OpenSEO on Cloudflare for internet-facing self-hosting across multiple devices or with your team. One deploy command provisions everything, including the Cloudflare Access login gate. Works on Cloudflare's free plan.
 
+Prefer sign-in with your own OpenID Connect provider over Cloudflare Access? OAuth sign-in ([`AUTH_MODE=oauth`](./SELF_HOSTING_DOCKER.md#oauth-sign-in-auth_modeoauth)) is currently supported on the Docker deployment; this Cloudflare deploy does not provision it.
+
 Related guides:
 
 - [Operations](./SELF_HOSTING_CLOUDFLARE_OPERATIONS.md): connect the MCP server, telemetry.
@@ -49,6 +51,8 @@ Copy the template and fill in the required values:
 ```bash
 cp deploy/.env.selfhost.example .env.selfhost
 ```
+
+Optional alternative SEO providers are listed in the template with comments — `SERPER_API_KEY` (Google), `YANDEX_SEARCH_API_KEY` + `YANDEX_FOLDER_ID` (Yandex), `BRIGHTDATA_API_TOKEN` (+ optional `BRIGHTDATA_SERP_ZONE`) for Baidu/Bing, and `GOOGLE_ADS_CUSTOMER_ID` + `GOOGLE_ADS_REFRESH_TOKEN` for keyword volumes from your own Google Ads account. Unset ones simply show as "not configured" in preflight.
 
 ## 4) Deploy
 

@@ -2,6 +2,7 @@ import { queryClient } from "@/client/tanstack-db/queryClient";
 import { googleConnectionOptions } from "@/client/features/integrations/googleProviders";
 import { createFileRoute } from "@tanstack/react-router";
 import { GoogleConnectionCard } from "@/client/features/integrations/GoogleConnectionCard";
+import { YandexConnectionCard } from "@/client/features/integrations/YandexConnectionCard";
 import { CrawlerAccessSettings } from "@/client/features/settings/CrawlerAccessSettings";
 import { IndexNowSettings } from "@/client/features/settings/IndexNowSettings";
 
@@ -36,6 +37,9 @@ function ProjectIntegrationsRoute() {
         <GoogleConnectionCard provider="ga4" projectId={projectId} />
       </section>
 
+      <section id="yandex-webmaster" className="scroll-mt-6">
+        <YandexConnectionCard projectId={projectId} />
+      </section>
       <IndexNowSettings projectId={projectId} />
 
       <CrawlerAccessSettings projectId={projectId} />

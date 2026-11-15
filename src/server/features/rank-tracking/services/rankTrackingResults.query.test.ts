@@ -30,7 +30,7 @@ beforeAll(async () => {
   await runtime.client!.executeMultiple(`
     CREATE TABLE rank_tracking_configs (
       id TEXT PRIMARY KEY, project_id TEXT, domain TEXT, location_code INTEGER,
-      language_code TEXT, devices TEXT, serp_depth INTEGER, schedule_interval TEXT,
+      language_code TEXT, search_engine TEXT DEFAULT 'google', devices TEXT, serp_depth INTEGER, schedule_interval TEXT,
       location_name TEXT, is_active INTEGER, last_checked_at TEXT, next_check_at TEXT,
       last_skip_reason TEXT, created_at TEXT
     );

@@ -14,6 +14,9 @@ import { AppError } from "@/server/lib/errors";
 import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
 import { KEYWORDS_PER_BATCH } from "@/shared/rank-tracking";
 import { pgStep } from "@/server/workflows/pgStep";
+import type { SerpProvider } from "@/server/lib/seo-providers/types";
+import type { SearchEngine } from "@/shared/search-engines";
+import { getIsoCountryCode } from "@/shared/keyword-locations";
 
 const SINGLE_ATTEMPT_STEP_CONFIG = {
   retries: { limit: 0, delay: "1 second" as const },
@@ -51,6 +54,130 @@ export interface CheckContext {
   languageCode: string;
   locationName?: string;
   runId: string;
+}
+
+/**
+ * Live-only check path for the alternative providers (serper google, yandex,
+ * brightdata baidu/bing): one request per keyword (Serper and Yandex take no
+ * device parameter; Bright Data could pass brd_mobile for bing/baidu, but
+ * every engine is normalized to desktop for parity), batched like
+ * runLiveCheck so progress reporting and snapshot persistence match. No
+ * DataForSEO queue exists for these providers, so failed keywords miss the
+ * run and the next scheduled pass re-checks them — retryRankChecks is
+ * skipped on this path by the caller.
+ */
+export async function runProviderCheck(
+  step: WorkflowStep,
+  ctx: Omit<CheckContext, "client">,
+  provider: SerpProvider,
+  engine: SearchEngine,
+): Promise<void> {
+  for (let i = 0; i < ctx.keywords.length; i += KEYWORDS_PER_BATCH) {
+    const keywordBatch = ctx.keywords.slice(i, i + KEYWORDS_PER_BATCH);
+    const batchTasks = expandToTaskInputs(keywordBatch, ctx.devices);
+    const batchIndex = Math.floor(i / KEYWORDS_PER_BATCH);
+    const keywordsChecked = i + keywordBatch.length;
+
+    try {
+      await pgStep(
+        step,
+        `${provider.id}-batch-${batchIndex}`,
+        SINGLE_ATTEMPT_STEP_CONFIG,
+        async () => {
+          // Providers take no device parameter we honor (Serper/Yandex have
+          // none; Bright Data's brd_mobile is normalized away for parity) —
+          // one desktop SERP per keyword, billed per keyword, not per
+          // device. One call per keyword, replicated to every device pair,
+          // so a both-devices tracker doesn't pay twice for identical
+          // results.
+          const tasksByKeyword = new Map<string, RankCheckTaskInput[]>();
+          for (const task of batchTasks) {
+            const group = tasksByKeyword.get(task.keyword) ?? [];
+            group.push(task);
+            tasksByKeyword.set(task.keyword, group);
+          }
+          const uniqueTasks = [...tasksByKeyword.values()].map(
+            (group) => group[0],
+          );
+
+          const settled = await Promise.allSettled(
+            uniqueTasks.map((task) =>
+              provider.checkRank({
+                keyword: task.keyword,
+                engine,
+                country: getIsoCountryCode(ctx.locationCode),
+                region: engine === "yandex" ? ctx.locationName : undefined,
+                language: ctx.languageCode,
+                device: task.device,
+                targetDomain: ctx.domain,
+                depth: ctx.serpDepth,
+              }),
+            ),
+          );
+          const results: RankCheckResultWithDevice[] = [];
+          let failedKeywords = 0;
+          settled.forEach((outcome, index) => {
+            const task = uniqueTasks[index];
+            if (outcome.status === "fulfilled") {
+              for (const deviceTask of tasksByKeyword.get(task.keyword) ?? [
+                task,
+              ]) {
+                results.push({
+                  ...toProviderRankCheckResult(deviceTask, outcome.value),
+                  device: deviceTask.device,
+                });
+              }
+              return;
+            }
+            failedKeywords++;
+            // Per-keyword failure isolation mirrors checkBatchLive: the
+            // provider names the outage, siblings complete, nothing partial
+            // is recorded.
+            console.error(
+              `[rank-check] ${ctx.runId} ${provider.id} call failed keyword="${task.keyword}":`,
+              outcome.reason,
+            );
+          });
+          if (failedKeywords > 0) {
+            // The bare code so the app shows its provider-unavailable copy
+            // (same rule as checkBatchLive); the provider's raw text would
+            // read like our own error.
+            await RankTrackingRepository.setRunErrorIfEmpty(
+              ctx.runId,
+              "UPSTREAM_UNAVAILABLE",
+            );
+          }
+          if (results.length > 0) {
+            await RankTrackingRepository.insertSnapshots(
+              mapResultsToSnapshotRows(ctx.runId, results),
+            );
+          }
+          await RankTrackingRepository.updateRun(ctx.runId, {
+            keywordsChecked,
+          });
+          return results.length;
+        },
+      );
+    } catch (error) {
+      console.warn(
+        `[rank-check] ${ctx.runId} ${provider.id}-batch-${batchIndex} failed:`,
+        error,
+      );
+    }
+  }
+}
+
+function toProviderRankCheckResult(
+  task: RankCheckTaskInput,
+  value: { position: number | null; url: string | null },
+): RankCheckResult {
+  return {
+    keywordId: task.keywordId,
+    keyword: task.keyword,
+    position: value.position,
+    url: value.url,
+    serpFeatures: [],
+  };
 }
 
 /** Expand keywords into one task input per keyword/device pair. */

@@ -4,6 +4,7 @@ import { useSession } from "@/lib/auth-client";
 import {
   isEmailVerificationBypassed,
   isHostedClientAuthMode,
+  isSessionClientAuthMode,
 } from "@/lib/auth-mode";
 import {
   getCurrentAuthRedirectFromHref,
@@ -14,12 +15,16 @@ import {
 export function useHostedAuthRouteGuard() {
   const navigate = useNavigate();
   const { data: session, isPending } = useSession();
+  // isHostedMode keeps marking vendor-SaaS chrome (billing banners, hosted
+  // org pages); the sign-in gate itself applies to every session-auth mode
+  // (hosted + self-hosted oauth, spec 016).
   const isHostedMode = isHostedClientAuthMode();
+  const needsSignInGate = isSessionClientAuthMode();
   const emailVerified =
     session?.user?.emailVerified === true || isEmailVerificationBypassed();
 
   useEffect(() => {
-    if (isPending || !isHostedMode) {
+    if (isPending || !needsSignInGate) {
       return;
     }
 
@@ -43,18 +48,18 @@ export function useHostedAuthRouteGuard() {
     }
   }, [
     isPending,
-    isHostedMode,
+    needsSignInGate,
     emailVerified,
     session?.user?.email,
     session?.user?.id,
     navigate,
   ]);
 
-  const hasVerifiedHostedSession =
+  const hasVerifiedSession =
     !isPending && Boolean(session?.user?.id) && emailVerified;
 
   return {
     isHostedMode,
-    canRenderAuthenticatedContent: !isHostedMode || hasVerifiedHostedSession,
+    canRenderAuthenticatedContent: !needsSignInGate || hasVerifiedSession,
   };
 }

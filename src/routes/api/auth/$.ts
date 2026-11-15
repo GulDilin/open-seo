@@ -1,17 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { env } from "cloudflare:workers";
-import { getAuth, hasHostedAuthConfig } from "@/lib/auth";
-import { isHostedAuthMode } from "@/lib/auth-mode";
+import { getAuth, hasSessionAuthConfig } from "@/lib/auth";
+import { isSessionAuthMode } from "@/lib/auth-mode";
 
+// Serves the Better Auth HTTP API for every session-auth mode (hosted and
+// self-hosted oauth, spec 016): sign-in, OAuth callbacks, get-session,
+// sign-out, and the API-key endpoints behind Settings → Personal.
 async function handleAuthRequest(request: Request) {
-  if (!isHostedAuthMode(env.AUTH_MODE)) {
+  if (!isSessionAuthMode(env.AUTH_MODE)) {
     return new Response("Not found", {
       status: 404,
     });
   }
 
-  if (!hasHostedAuthConfig()) {
-    return new Response("Missing Better Auth hosted configuration", {
+  if (!hasSessionAuthConfig()) {
+    return new Response("Missing Better Auth configuration for session auth", {
       status: 500,
     });
   }

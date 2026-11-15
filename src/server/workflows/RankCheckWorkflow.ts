@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- one orchestration file for the whole check lifecycle (prepare, provider dispatch, finalize); the provider branches share one runner and cannot shrink below this */
 import {
   WorkflowEntrypoint,
   type WorkflowEvent,
@@ -10,11 +11,18 @@ import { RankTrackingRepository } from "@/server/features/rank-tracking/reposito
 import { failRunIfActive } from "@/server/features/rank-tracking/services/rankCheckRunGuards";
 import {
   runLiveCheck,
+  runProviderCheck,
   runQueuedCheck,
 } from "@/server/workflows/rankCheckPaths";
 import { retryRankChecks } from "@/server/workflows/rankCheckRetries";
 import { pgStep } from "@/server/workflows/pgStep";
+import {
+  resolveSerpProvider,
+  serpProviderById,
+} from "@/server/lib/seo-providers/routing";
+import { getKeywordDataProvider } from "@/shared/keyword-locations";
 import { createDataforseoClient } from "@/server/lib/dataforseo";
+import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
 import { captureServerEvent } from "@/server/lib/posthog";
 import { sendCreditsExhaustedEvent } from "@/server/email/onboarding-drip";
 import { AppError } from "@/server/lib/errors";
@@ -42,6 +50,7 @@ interface RankCheckParams {
   domain: string;
   locationCode: number;
   languageCode: string;
+  searchEngine: RankTrackingConfig["searchEngine"];
   locationName?: string;
   devices: "both" | "desktop" | "mobile";
   serpDepth: number;
@@ -298,6 +307,8 @@ export class RankCheckWorkflow extends WorkflowEntrypoint<
       domain,
       locationCode,
       languageCode,
+      // In-flight workflows started before the field existed carry no engine.
+      searchEngine = "google" as RankTrackingConfig["searchEngine"],
       locationName,
       devices,
       serpDepth,
@@ -305,6 +316,51 @@ export class RankCheckWorkflow extends WorkflowEntrypoint<
       keywordIds,
       maxCostCredits,
     } = event.payload;
+
+    // Provider gate before any paid call: non-google engines run on their own
+    // provider phases' adapters; until one is configured, the run fails with
+    // the resolver's error (which names the missing credentials) instead of
+    // silently falling back to the google-only DataForSEO path.
+    if (searchEngine !== "google") {
+      try {
+        await resolveSerpProvider(searchEngine);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        await failRunIfActive(runId, message);
+        await RankTrackingRepository.updateConfig(configId, projectId, {
+          lastSkipReason: "provider_not_configured",
+        });
+        return;
+      }
+    }
+    // Google checks prefer Serper when its key is set (provider chain order);
+    // without it the resolver names the incumbent, and the run continues on
+    // the DataForSEO paths below exactly as before. City-level trackers stay
+    // on DataForSEO even with Serper configured: city targeting needs
+    // sub-country geo, which Serper cannot serve (decisions §5).
+    let googleProvider =
+      searchEngine === "google" && !locationName
+        ? await resolveSerpProvider("google").catch(() => null)
+        : null;
+    // Same gate as creation, for trackers made before credentials changed:
+    // google on a market DataForSEO does not cover (Russia, China) must not
+    // silently fall back to the incumbent — fail the run with the credential
+    // named and mark the skip reason.
+    if (
+      searchEngine === "google" &&
+      googleProvider !== "serper" &&
+      ["wordstat", "none"].includes(getKeywordDataProvider(locationCode))
+    ) {
+      await failRunIfActive(
+        runId,
+        "Google tracking for this market requires SERPER_API_KEY (DataForSEO does not serve it).",
+      );
+      await RankTrackingRepository.updateConfig(configId, projectId, {
+        lastSkipReason: "provider_not_configured",
+      });
+      return;
+    }
 
     // Guard: skip if config was archived after the workflow was triggered
     const configCheck = await pgStep(
@@ -347,33 +403,62 @@ export class RankCheckWorkflow extends WorkflowEntrypoint<
       );
 
       const keywords = prepareResult.keywords;
-      const client = createDataforseoClient(billingCustomer);
 
-      console.log(`[rank-check] ${runId} loaded ${keywords.length} keywords`);
+      console.log(
+        `[rank-check] ${runId} loaded ${keywords.length} keywords (provider=${googleProvider ?? "dataforseo"})`,
+      );
 
       let batchError: string | null = null;
 
       try {
-        const checkContext = {
-          client,
-          keywords,
-          devices,
-          serpDepth,
-          domain,
-          locationCode,
-          languageCode,
-          locationName,
-          runId,
-        };
-        // Scheduled checks use DataForSEO's task queue (~30% of live cost);
-        // manual checks stay on the live endpoint for instant results.
-        // Retries always go through the queue.
-        if (trigger === "scheduled") {
-          await runQueuedCheck(step, checkContext);
+        const providerId =
+          searchEngine === "google"
+            ? googleProvider
+            : await resolveSerpProvider(searchEngine);
+        const provider = providerId ? serpProviderById(providerId) : null;
+        if (provider && providerId) {
+          // Adapter path (serper google, yandex, brightdata baidu/bing): the
+          // provider module reads its own credentials; locationName carries
+          // the provider's region id for yandex. No metered DataForSEO
+          // client is created.
+          await runProviderCheck(
+            step,
+            {
+              keywords,
+              devices,
+              serpDepth,
+              domain,
+              locationCode,
+              languageCode,
+              locationName,
+              runId,
+            },
+            provider,
+            searchEngine,
+          );
         } else {
-          await runLiveCheck(step, checkContext);
+          const client = createDataforseoClient(billingCustomer);
+          const checkContext = {
+            client,
+            keywords,
+            devices,
+            serpDepth,
+            domain,
+            locationCode,
+            languageCode,
+            locationName,
+            runId,
+          };
+          // Scheduled checks use DataForSEO's task queue (~30% of live cost);
+          // manual checks stay on the live endpoint for instant results.
+          // Retries always go through the queue.
+          if (trigger === "scheduled") {
+            await runQueuedCheck(step, checkContext);
+          } else {
+            await runLiveCheck(step, checkContext);
+          }
+          await retryRankChecks(step, checkContext, configId);
         }
-        await retryRankChecks(step, checkContext, configId);
       } catch (error) {
         // Batch failure — snapshots for completed batches are already
         // persisted incrementally. Continue to finalization.

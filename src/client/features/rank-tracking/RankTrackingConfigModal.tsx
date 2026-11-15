@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- one form per tracker lifecycle step (domain, market, engine, targeting, schedule); splitting it would spread a single validation flow across files */
 import { useId, useState } from "react";
 import { projectsQueryOptions } from "@/client/features/projects/projectQueries";
 import { useQuery } from "@tanstack/react-query";
@@ -17,6 +18,11 @@ import { Field, FieldLabel } from "@/client/components/ui/field";
 import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
 import { domainField, normalizeDomain } from "@/types/schemas/domain";
 import { pagesToDepth, estimateRankCheckCredits } from "@/shared/rank-tracking";
+import {
+  enginesForCountry,
+  isEngineAvailableForCountry,
+  type SearchEngine,
+} from "@/shared/search-engines";
 import { getLanguageCode } from "@/client/features/keywords/locations";
 import {
   SERP_LANGUAGE_OPTIONS,
@@ -69,6 +75,13 @@ const DEPTH_ITEMS = Array.from({ length: 10 }, (_, i) => i + 1).map(
     label: `${pages} ${pages === 1 ? "page" : "pages"} (top ${pages * 10} results)`,
   }),
 );
+
+const ENGINE_LABELS: Record<SearchEngine, string> = {
+  google: "Google",
+  yandex: "Yandex",
+  baidu: "Baidu",
+  bing: "Bing",
+};
 
 function validateConfig(values: ConfigFormValues) {
   const fields: Partial<Record<keyof ConfigFormValues, string>> = {};
@@ -173,6 +186,14 @@ function RankTrackingConfigModalContent({
     languageCode: existingConfig?.languageCode ?? initialMarket.languageCode,
     targetingMode: existingConfig?.locationName ? "local" : "national",
     locationName: existingConfig?.locationName ?? undefined,
+    // google is not offered on every market (e.g. Russia is yandex-only) —
+    // start from the market's first engine so the default never fails the
+    // server-side availability check on submit.
+    searchEngine:
+      existingConfig?.searchEngine ??
+      enginesForCountry(
+        existingConfig?.locationCode ?? initialMarket.locationCode,
+      )[0],
     devices: existingConfig?.devices ?? "mobile",
     schedule: existingConfig?.scheduleInterval ?? "weekly",
     // Shown and edited in the browser's timezone; the server converts it to UTC.
@@ -279,24 +300,71 @@ function RankTrackingConfigModalContent({
                     );
                     // A picked city belongs to the previous country.
                     form.setFieldValue("locationName", undefined);
+                    // Engines are per market — keep a valid selection.
+                    if (
+                      !isEngineAvailableForCountry(
+                        locationCode,
+                        values.searchEngine ?? "google",
+                      )
+                    ) {
+                      form.setFieldValue(
+                        "searchEngine",
+                        enginesForCountry(locationCode)[0],
+                      );
+                    }
                   }}
                 />
               </Field>
 
-              <form.Field name="locationName">
-                {(field) => (
-                  <SearchTargetingField
-                    mode={values.targetingMode}
-                    onModeChange={(mode) =>
-                      form.setFieldValue("targetingMode", mode)
-                    }
-                    locationName={field.state.value}
-                    onLocationNameChange={field.handleChange}
-                    countryCode={getIsoCountryCode(values.locationCode)}
-                    error={getFieldError(field.state.meta.errors) ?? undefined}
-                  />
-                )}
-              </form.Field>
+              {!isEdit && (
+                <form.AppField
+                  name="searchEngine"
+                  listeners={{
+                    // City targeting is google-only; leaving a picked city
+                    // behind on a non-google engine would fail on save.
+                    onChange: ({ value }) => {
+                      if (value !== "google") {
+                        form.setFieldValue("locationName", undefined);
+                        form.setFieldValue("targetingMode", "national");
+                      }
+                    },
+                  }}
+                >
+                  {(field) => (
+                    <field.SelectField
+                      label="Search Engine"
+                      // The engine is fixed once the tracker exists — changing
+                      // it would orphan the position history's meaning.
+                      items={enginesForCountry(values.locationCode).map(
+                        (engine) => ({
+                          value: engine,
+                          label: ENGINE_LABELS[engine],
+                        }),
+                      )}
+                      description="Offered engines depend on the country. Position history is per engine, so this choice is permanent for the tracker."
+                    />
+                  )}
+                </form.AppField>
+              )}
+
+              {(values.searchEngine ?? "google") === "google" && (
+                <form.Field name="locationName">
+                  {(field) => (
+                    <SearchTargetingField
+                      mode={values.targetingMode}
+                      onModeChange={(mode) =>
+                        form.setFieldValue("targetingMode", mode)
+                      }
+                      locationName={field.state.value}
+                      onLocationNameChange={field.handleChange}
+                      countryCode={getIsoCountryCode(values.locationCode)}
+                      error={
+                        getFieldError(field.state.meta.errors) ?? undefined
+                      }
+                    />
+                  )}
+                </form.Field>
+              )}
 
               <form.AppField name="languageCode">
                 {(field) => (

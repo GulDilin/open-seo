@@ -12,6 +12,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import * as React from "react";
 import { DefaultCatchBoundary } from "@/client/components/DefaultCatchBoundary";
 import { captureGoogleLinkError } from "@/client/features/integrations/googleLinkError";
+import { captureYandexLinkError } from "@/client/features/integrations/yandexLinkError";
 import { ExportToSheetsModal } from "@/client/components/table/ExportToSheetsModal";
 import { themePreferenceInitScript } from "@/client/lib/theme";
 import { NotFound } from "@/client/components/NotFound";
@@ -24,6 +25,7 @@ import { queryClient } from "@/client/tanstack-db";
 // Capture Google link error params before the router starts — a route loader
 // redirect would otherwise replace the URL and lose them. See googleLinkError.ts.
 captureGoogleLinkError();
+captureYandexLinkError();
 
 export const Route = createRootRoute({
   head: () => ({

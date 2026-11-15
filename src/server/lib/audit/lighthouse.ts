@@ -1,9 +1,16 @@
+import { z } from "zod";
+import { AppError } from "@/server/lib/errors";
 import { detectUrlTemplate, canonicalUrlKey } from "./url-utils";
-import type { BillingCustomerContext } from "@/server/billing/subscription";
-import { createDataforseoClient } from "@/server/lib/dataforseo";
 import type { LighthouseResult, LighthouseStrategy } from "./types";
 import type { PageFetchClass } from "@/shared/audit-fetch-class";
 import { putTextToR2 } from "@/server/lib/r2";
+import {
+  buildStoredLighthouseIssues,
+  buildStoredLighthouseMetrics,
+  type RawLighthouseAudit,
+  type RawLighthouseCategory,
+  type StoredLighthousePayload,
+} from "@/server/lib/lighthouseStoredPayload";
 
 interface LighthouseSamplePage {
   url: string;
@@ -50,43 +57,145 @@ export function failedLighthouseFetch(
   };
 }
 
+/**
+ * Page vitals via Google PageSpeed Insights — free, same Lighthouse under
+ * the hood the incumbent resold (decisions §7). One request per page; a
+ * failure isolates to its page and the audit continues.
+ *
+ * ponytail: keyless PSI is generous per IP; add PAGESPEED_API_KEY env only
+ * if a real audit ever hits the free ceiling.
+ */
+const PSI_ENDPOINT =
+  "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
+
+const psiResponseSchema = z
+  .object({
+    lighthouseResult: z
+      .object({
+        requestedUrl: z.string().optional(),
+        finalUrl: z.string().optional(),
+        lighthouseVersion: z.string().optional(),
+        // Key maps only (same trick as the DataForSEO reader): the report
+        // bodies stay as PSI's own objects instead of being cloned again.
+        categories: z
+          .record(z.string(), z.custom<RawLighthouseCategory>())
+          .optional(),
+        audits: z.record(z.string(), z.custom<RawLighthouseAudit>()).optional(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
+function scoreToPercent(score?: number | null): number | null {
+  return score == null ? null : Math.round(score * 100);
+}
+
+function auditNumericValue(
+  audits: Record<string, unknown> | undefined,
+  id: string,
+): number | null {
+  const audit = audits?.[id];
+  if (typeof audit !== "object" || audit === null) return null;
+  const value = (audit as { numericValue?: unknown }).numericValue;
+  return typeof value === "number" ? value : null;
+}
+
+async function psiLighthouse(
+  url: string,
+  strategy: "mobile" | "desktop",
+): Promise<Response> {
+  const categories = ["performance", "accessibility", "best-practices", "seo"];
+  const params = new URLSearchParams({ url, strategy });
+  for (const category of categories) params.append("category", category);
+  return fetch(`${PSI_ENDPOINT}?${params.toString()}`, {
+    signal: AbortSignal.timeout(60_000),
+  });
+}
+
 export async function fetchLighthouseResult(
   url: string,
   pageId: string,
   strategy: "mobile" | "desktop",
-  billingCustomer: BillingCustomerContext,
 ): Promise<LighthouseFetchResult> {
-  const dataforseo = createDataforseoClient(billingCustomer);
   try {
-    const data = await dataforseo.lighthouse.live({ url, strategy });
+    // One retry on 429/5xx/timeout only — the free source has no SLA, and
+    // the next audit re-measures anyway. A network error or timeout counts
+    // as an attempt (it used to escape the loop unretried) and the thrown
+    // error names the real last failure, not a generic "timeout".
+    let response: Response | null = null;
+    let lastFailure = "request failed";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        response = await psiLighthouse(url, strategy);
+      } catch (error) {
+        lastFailure = error instanceof Error ? error.message : "request failed";
+        continue;
+      }
+      if (response.ok) break;
+      lastFailure = `PSI responded ${response.status}`;
+      // Hard failures (4xx, other 5xx-classes) are not retried.
+      if (response.status !== 429 && response.status < 500) break;
+      response = null;
+    }
+    if (!response || !response.ok) {
+      throw new AppError("UPSTREAM_UNAVAILABLE", lastFailure);
+    }
+    const parsed = psiResponseSchema.safeParse(await response.json());
+    if (!parsed.success) {
+      throw new Error("PSI response failed schema validation");
+    }
+    const lr = parsed.data.lighthouseResult;
+    const audits = lr.audits ?? {};
+    const categories = lr.categories ?? {};
+    // Stored in R2 as the same normalized payload shape the DataForSEO path
+    // writes, so readStoredLighthousePayload serves both sources unchanged.
+    const issueReport = buildStoredLighthouseIssues({ audits, categories });
+    const storedPayload: StoredLighthousePayload = {
+      version: 2,
+      source: "psi-lighthouse",
+      hasIssueDetails: issueReport.hasIssueDetails,
+      metadata: {
+        requestedUrl: lr.requestedUrl ?? url,
+        finalUrl: lr.finalUrl ?? url,
+        strategy,
+        fetchedAt: new Date().toISOString(),
+        lighthouseVersion: lr.lighthouseVersion ?? null,
+        taskId: null,
+        cost: null,
+      },
+      scores: {
+        performance: scoreToPercent(categories.performance?.score),
+        accessibility: scoreToPercent(categories.accessibility?.score),
+        "best-practices": scoreToPercent(categories["best-practices"]?.score),
+        seo: scoreToPercent(categories.seo?.score),
+      },
+      metrics: buildStoredLighthouseMetrics({ audits }),
+      issues: issueReport.issues,
+    };
 
     return {
       result: {
         url,
         pageId,
         strategy,
-        performanceScore: data.scores.performance,
-        accessibilityScore: data.scores.accessibility,
-        bestPracticesScore: data.scores["best-practices"],
-        seoScore: data.scores.seo,
-        lcpMs: data.metrics.largestContentfulPaint.numericValue,
-        cls: data.metrics.cumulativeLayoutShift.numericValue,
-        inpMs: data.metrics.interactionToNextPaint.numericValue,
-        ttfbMs: data.metrics.serverResponseTime.numericValue,
+        performanceScore: storedPayload.scores.performance,
+        accessibilityScore: storedPayload.scores.accessibility,
+        bestPracticesScore: storedPayload.scores["best-practices"],
+        seoScore: storedPayload.scores.seo,
+        lcpMs: auditNumericValue(audits, "largest-contentful-paint"),
+        cls: auditNumericValue(audits, "cumulative-layout-shift"),
+        inpMs: auditNumericValue(audits, "interaction-to-next-paint"),
+        ttfbMs: auditNumericValue(audits, "server-response-time"),
       },
-      payloadJson: JSON.stringify(data),
+      payloadJson: JSON.stringify(storedPayload),
     };
   } catch (error) {
     const failed = error instanceof Error ? error : new Error(String(error));
-    // Lighthouse runtime errors (ERRORED_DOCUMENT_REQUEST, NOT_HTML, NO_FCP) mean the
-    // tenant's page didn't load for the provider's Chrome. The failure is already
-    // surfaced on the audit row, so there is nothing for us to act on.
-    const log = failed.message.includes(
-      "Lighthouse encountered an error with the following code",
-    )
-      ? console.warn
-      : console.error;
-    log(`Lighthouse failed for ${url} (${strategy}): ${failed.message}`);
+    // Page-level failures (timeouts, PSI's own error payloads) are isolated:
+    // the audit keeps going and the row shows the reason.
+    console.warn(
+      `Lighthouse failed for ${url} (${strategy}): ${failed.message}`,
+    );
     return failedLighthouseFetch(url, pageId, strategy, failed.message);
   }
 }

@@ -25,6 +25,7 @@ const input = {
     domain: "example.com",
     locationCode: 2840,
     languageCode: "en",
+    searchEngine: "google" as const,
     locationName: null,
     devices: "desktop" as const,
     serpDepth: 20,

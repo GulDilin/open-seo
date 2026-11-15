@@ -4,6 +4,30 @@
 
 export const MIN_BETTER_AUTH_SECRET_LENGTH = 32;
 
+// BETTER_AUTH_URL rule (auth.ts's hostedBaseUrlSchema applies the same one):
+// URL-parsed, https anywhere or http only on localhost. Substring checks
+// would accept "http://localhost.evil.com" and a bare "https://".
+export function isHttpsOrLocalhostUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" ||
+      (url.protocol === "http:" && url.hostname === "localhost")
+    );
+  } catch {
+    return false;
+  }
+}
+
+// OIDC issuers (OAUTH_SIGNIN_ISSUER) are always https.
+export function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 type TeamDomainResult =
   | { ok: true; origin: string }
   | { ok: false; message: string };

@@ -1,4 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import {
+  DataForSeoRequiredBadge,
+  useSeoProviderSetup,
+} from "@/client/components/ProviderRequiredBadge";
 import { BacklinksPage } from "@/client/features/backlinks/BacklinksPage";
 import {
   DEFAULT_BACKLINKS_PAGE_SIZE,
@@ -26,23 +30,35 @@ function BacklinksRoute() {
     includeSpam,
   } = Route.useSearch();
   const scope = rawScope ?? defaultScopeForInput(target);
+  // The whole page runs on DataForSEO; without its key every mounted query
+  // would fail server-side. Render the badge instead of the page.
+  const setup = useSeoProviderSetup();
+  if (setup.data && !setup.data.dataforseo)
+    return (
+      <div className="space-y-3">
+        <DataForSeoRequiredBadge />
+      </div>
+    );
 
   return (
-    <BacklinksPage
-      projectId={projectId}
-      navigate={navigate}
-      searchState={{
-        target,
-        scope,
-        // Referring domains can't be filtered to a subfolder.
-        tab: scope === "subfolder" && tab === "domains" ? "backlinks" : tab,
-        page,
-        pageSize: size,
-        sort,
-        order,
-        view,
-        includeSpam,
-      }}
-    />
+    <div className="space-y-3">
+      <DataForSeoRequiredBadge />
+      <BacklinksPage
+        projectId={projectId}
+        navigate={navigate}
+        searchState={{
+          target,
+          scope,
+          // Referring domains can't be filtered to a subfolder.
+          tab: scope === "subfolder" && tab === "domains" ? "backlinks" : tab,
+          page,
+          pageSize: size,
+          sort,
+          order,
+          view,
+          includeSpam,
+        }}
+      />
+    </div>
   );
 }

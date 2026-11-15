@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- one file per repository under test; the SQL-backed due/trend/retry suites share the schema fixture and can't shrink below it */
 import { createClient, type Client } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { eq } from "drizzle-orm";
@@ -57,6 +58,7 @@ beforeAll(async () => {
       domain TEXT NOT NULL,
       location_code INTEGER NOT NULL DEFAULT 2840,
       language_code TEXT NOT NULL DEFAULT 'en',
+      search_engine TEXT NOT NULL DEFAULT 'google',
       devices TEXT NOT NULL DEFAULT 'both',
       serp_depth INTEGER NOT NULL,
       schedule_interval TEXT NOT NULL DEFAULT 'weekly',

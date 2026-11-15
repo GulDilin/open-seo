@@ -28,7 +28,12 @@ declare namespace Cloudflare {
     // oxlint-disable-next-line typescript-eslint/consistent-type-imports
     AUDIT_ENGINE: Service<typeof import("./audit-worker").default>;
 
-    AUTH_MODE?: "cloudflare_access" | "local_noauth" | "hosted";
+    // Keep in sync with AUTH_MODES in src/lib/auth-mode.ts.
+    AUTH_MODE?:
+      | "cloudflare_access"
+      | "local_noauth"
+      | "hosted"
+      | "oauth";
     BYPASS_EMAIL_VERIFICATION?: string;
     TEAM_DOMAIN?: string;
     POLICY_AUD?: string;
@@ -45,6 +50,13 @@ declare namespace Cloudflare {
     };
     GOOGLE_CLIENT_ID?: string;
     GOOGLE_CLIENT_SECRET?: string;
+    // The operator's OpenID Connect IdP for AUTH_MODE=oauth sign-in
+    // (spec 016): issuer base URL, client pair, optional space-separated
+    // scope override (defaults: openid profile email).
+    OAUTH_SIGNIN_ISSUER?: string;
+    OAUTH_SIGNIN_CLIENT_ID?: string;
+    OAUTH_SIGNIN_CLIENT_SECRET?: string;
+    OAUTH_SIGNIN_SCOPES?: string;
     LOOPS_API_KEY?: string;
     LOOPS_TRANSACTIONAL_VERIFY_EMAIL_ID?: string;
     LOOPS_TRANSACTIONAL_RESET_PASSWORD_ID?: string;
@@ -93,7 +105,12 @@ declare namespace Cloudflare {
 }
 
 interface ImportMetaEnv {
-  readonly AUTH_MODE?: "cloudflare_access" | "local_noauth" | "hosted";
+  // Keep in sync with AUTH_MODES in src/lib/auth-mode.ts.
+  readonly AUTH_MODE?:
+    | "cloudflare_access"
+    | "local_noauth"
+    | "hosted"
+    | "oauth";
   readonly DATABASE_PROVIDER?: "d1" | "postgres";
   readonly BYPASS_EMAIL_VERIFICATION?: string;
   readonly POSTHOG_PUBLIC_KEY?: string;

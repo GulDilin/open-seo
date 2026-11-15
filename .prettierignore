@@ -17,3 +17,6 @@ drizzle/pg/
 planning/
 src/worker-configuration.d.ts
 web/
+specs/
+.specify/
+.claude/

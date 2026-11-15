@@ -7,6 +7,10 @@ import { DashboardDataTable } from "./DashboardDataTable";
 import { useState, type ComponentProps } from "react";
 import { TabsTrigger } from "@/client/components/ui/tabs";
 import { getDashboardBacklinks } from "@/serverFunctions/dashboard";
+import {
+  DataForSeoRequiredBadge,
+  useSeoProviderSetup,
+} from "@/client/components/ProviderRequiredBadge";
 import { Freshness, ExternalPage } from "./siteTabParts";
 const KINDS = ["new", "lost", "all"] as const;
 type Kind = (typeof KINDS)[number];
@@ -25,12 +29,17 @@ export function DashboardBacklinks({
   domain: string;
 }) {
   const [kind, setKind] = useState<Kind>("new");
+  const setup = useSeoProviderSetup();
   const query = useQuery({
     queryKey: ["dashboardBacklinks", projectId, domain, kind],
     queryFn: () => getDashboardBacklinks({ data: { projectId, kind } }),
     staleTime: 86400_000,
     retry: false,
+    // Same DataForSEO gate as the link-activity card: no key, no request —
+    // the badge explains instead of a load error.
+    enabled: setup.data?.dataforseo === true,
   });
+  if (setup.data && !setup.data.dataforseo) return <DataForSeoRequiredBadge />;
   return (
     <DashboardBacklinkTable
       rows={query.data?.value ?? []}

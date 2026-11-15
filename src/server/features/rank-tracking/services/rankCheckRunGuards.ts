@@ -40,6 +40,7 @@ type RankCheckConfigForStart = Pick<
   | "domain"
   | "locationCode"
   | "languageCode"
+  | "searchEngine"
   | "locationName"
   | "devices"
   | "serpDepth"
@@ -171,6 +172,7 @@ export async function beginRankCheckRun(input: {
             domain: input.config.domain,
             locationCode: input.config.locationCode,
             languageCode: input.config.languageCode,
+            searchEngine: input.config.searchEngine,
             locationName: input.config.locationName ?? undefined,
             devices: input.config.devices,
             serpDepth: input.config.serpDepth,

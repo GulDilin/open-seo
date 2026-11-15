@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_CONFIGS_PER_PROJECT } from "@/shared/rank-tracking";
+import { asAppError } from "@/server/lib/errors";
 import { RankTrackingService } from "./RankTrackingService";
 
 const mocks = vi.hoisted(() => ({
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   startWorkflow: vi.fn(),
   isHosted: vi.fn(),
   customerHasPaidPlan: vi.fn(),
+  getOptionalEnvValue: vi.fn(),
 }));
 
 vi.mock("cloudflare:workers", () => ({
@@ -21,6 +23,7 @@ vi.mock("cloudflare:workers", () => ({
 }));
 vi.mock("@/server/lib/runtime-env", () => ({
   getRequiredEnvValue: () => Promise.resolve("basic-key"),
+  getOptionalEnvValue: mocks.getOptionalEnvValue,
   isHostedServerAuthMode: mocks.isHosted,
 }));
 vi.mock("@/server/billing/subscription", () => ({
@@ -38,6 +41,7 @@ const archivedConfig = {
   domain: "acme.com",
   locationCode: 2840,
   languageCode: "es",
+  searchEngine: "google" as const,
   devices: "both" as const,
   serpDepth: 20,
   scheduleInterval: "weekly" as const,
@@ -138,23 +142,25 @@ describe("RankTrackingService.createConfig", () => {
       ...baseInput,
       locationName: "Enid,Oklahoma,United States",
     });
-    expect(mocks.getConfigByProjectDomainMarket).toHaveBeenCalledWith(
-      "project_1",
-      "acme.com",
-      2840,
-      "es",
-      "Enid,Oklahoma,United States",
-    );
+    expect(mocks.getConfigByProjectDomainMarket).toHaveBeenCalledWith({
+      projectId: "project_1",
+      domain: "acme.com",
+      locationCode: 2840,
+      languageCode: "es",
+      locationName: "Enid,Oklahoma,United States",
+      searchEngine: "google",
+    });
 
     // National config: the lookup is scoped to NULL locationName.
     await RankTrackingService.createConfig(baseInput);
-    expect(mocks.getConfigByProjectDomainMarket).toHaveBeenLastCalledWith(
-      "project_1",
-      "acme.com",
-      2840,
-      "es",
-      null,
-    );
+    expect(mocks.getConfigByProjectDomainMarket).toHaveBeenLastCalledWith({
+      projectId: "project_1",
+      domain: "acme.com",
+      locationCode: 2840,
+      languageCode: "es",
+      locationName: null,
+      searchEngine: "google",
+    });
   });
 
   it("rejects reactivating an archived config when the project is at the active-config cap", async () => {
@@ -218,6 +224,19 @@ describe("RankTrackingService.createConfig", () => {
     expect(String(error)).toContain("search_serp_locations");
     expect(mocks.createConfig).not.toHaveBeenCalled();
   });
+
+  it("rejects city targeting for non-google engines", async () => {
+    await expect(
+      RankTrackingService.createConfig({
+        ...baseInput,
+        locationCode: 643,
+        languageCode: "ru",
+        searchEngine: "yandex",
+        locationName: "Moscow",
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(mocks.createConfig).not.toHaveBeenCalled();
+  });
 });
 
 describe("RankTrackingService.updateConfig schedule", () => {
@@ -227,6 +246,8 @@ describe("RankTrackingService.updateConfig schedule", () => {
       isActive: true,
       nextCheckAt: "2026-03-15T21:00:00.000Z",
     });
+    // No Serper by default: the google-RU gate must reject.
+    mocks.getOptionalEnvValue.mockResolvedValue(undefined);
   });
 
   it("keeps the run time when a save resends an unchanged interval", async () => {
@@ -272,6 +293,51 @@ describe("RankTrackingService.updateConfig schedule", () => {
       RankTrackingService.updateConfig("config_archived", "project_1", input),
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     expect(mocks.updateConfig).not.toHaveBeenCalled();
+  });
+});
+
+describe("RankTrackingService.updateConfig engine availability", () => {
+  beforeEach(() => {
+    mocks.getConfigById.mockResolvedValue({
+      ...archivedConfig,
+      isActive: true,
+      nextCheckAt: "2026-03-15T21:00:00.000Z",
+    });
+    // No Serper by default: the google-RU gate must reject.
+    mocks.getOptionalEnvValue.mockResolvedValue(undefined);
+  });
+
+  it("rejects moving a google tracker to Russia without Serper, naming the key", async () => {
+    // google-RU is available but served by Serper only; without the key the
+    // move must fail with the credential named, not a DataForSEO rejection.
+    const rejection = await RankTrackingService.updateConfig(
+      "config_archived",
+      "project_1",
+      { locationCode: 643 },
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(rejection).toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(asAppError(rejection)?.message).toContain("SERPER_API_KEY");
+    expect(mocks.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it("accepts moving a google tracker to Russia once Serper is configured", async () => {
+    mocks.getOptionalEnvValue.mockImplementation(async (name: string) =>
+      name === "SERPER_API_KEY" ? "serper-key" : undefined,
+    );
+    await RankTrackingService.updateConfig("config_archived", "project_1", {
+      locationCode: 643,
+    });
+    expect(mocks.updateConfig).toHaveBeenCalled();
+  });
+
+  it("accepts a country change the engine serves", async () => {
+    await RankTrackingService.updateConfig("config_archived", "project_1", {
+      locationCode: 2276,
+    });
+    expect(mocks.updateConfig).toHaveBeenCalled();
   });
 });
 
