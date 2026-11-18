@@ -14,7 +14,10 @@ import { AppError } from "@/server/lib/errors";
 import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
 import { KEYWORDS_PER_BATCH } from "@/shared/rank-tracking";
 import { pgStep } from "@/server/workflows/pgStep";
-import type { SerpProvider } from "@/server/lib/seo-providers/types";
+import type {
+  SerpProvider,
+  SerpRankResult,
+} from "@/server/lib/seo-providers/types";
 import type { SearchEngine } from "@/shared/search-engines";
 import { getIsoCountryCode } from "@/shared/keyword-locations";
 
@@ -22,6 +25,13 @@ const SINGLE_ATTEMPT_STEP_CONFIG = {
   retries: { limit: 0, delay: "1 second" as const },
   timeout: "2 minutes" as const,
 };
+
+/**
+ * Concurrent keyword checks within one provider batch. Firing the whole batch
+ * at once bursts past provider per-second rate limits (Serper answers 429);
+ * keywords within a chunk run in parallel, chunks run one after another.
+ */
+const PROVIDER_KEYWORD_CONCURRENCY = 5;
 
 type KeywordEntry = { id: string; keyword: string };
 export type RankCheckResultWithDevice = RankCheckResult & {
@@ -100,20 +110,33 @@ export async function runProviderCheck(
             (group) => group[0],
           );
 
-          const settled = await Promise.allSettled(
-            uniqueTasks.map((task) =>
-              provider.checkRank({
-                keyword: task.keyword,
-                engine,
-                country: getIsoCountryCode(ctx.locationCode),
-                region: engine === "yandex" ? ctx.locationName : undefined,
-                language: ctx.languageCode,
-                device: task.device,
-                targetDomain: ctx.domain,
-                depth: ctx.serpDepth,
-              }),
-            ),
-          );
+          const settled: PromiseSettledResult<SerpRankResult>[] = [];
+          for (
+            let j = 0;
+            j < uniqueTasks.length;
+            j += PROVIDER_KEYWORD_CONCURRENCY
+          ) {
+            const chunk = uniqueTasks.slice(
+              j,
+              j + PROVIDER_KEYWORD_CONCURRENCY,
+            );
+            settled.push(
+              ...(await Promise.allSettled(
+                chunk.map((task) =>
+                  provider.checkRank({
+                    keyword: task.keyword,
+                    engine,
+                    country: getIsoCountryCode(ctx.locationCode),
+                    region: engine === "yandex" ? ctx.locationName : undefined,
+                    language: ctx.languageCode,
+                    device: task.device,
+                    targetDomain: ctx.domain,
+                    depth: ctx.serpDepth,
+                  }),
+                ),
+              )),
+            );
+          }
           const results: RankCheckResultWithDevice[] = [];
           let failedKeywords = 0;
           settled.forEach((outcome, index) => {

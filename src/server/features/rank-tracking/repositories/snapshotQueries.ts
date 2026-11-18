@@ -1,19 +1,28 @@
+/* eslint-disable max-lines -- every snapshot read query for the feature in one module; the trend, summary, matrix, and retry reads share the run/snapshot scoping idioms */
 import {
   and,
   asc,
   count,
+  countDistinct,
   desc,
   eq,
   gte,
   inArray,
+  isNull,
   lte,
   max,
   min,
   sql,
 } from "drizzle-orm";
 import { db } from "@/db";
-import { rankCheckRuns, rankSnapshots } from "@/db/schema";
+import {
+  rankCheckRuns,
+  rankSnapshots,
+  rankTrackingConfigs,
+  rankTrackingKeywords,
+} from "@/db/schema";
 import { toRankTrackingTimestamp } from "@/server/features/rank-tracking/rankTrackingTimestamps";
+import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
 
 function completedRunIdsForConfig(configId: string) {
   return db
@@ -222,6 +231,227 @@ export async function getSnapshotsForConfig(
 
 export async function getLatestSnapshotsForKeywords(configId: string) {
   return getSnapshotsForConfig(configId, { order: "latest" });
+}
+
+type ProjectTrendFilters = {
+  searchEngine?: RankTrackingConfig["searchEngine"];
+  /** null locationName = the national market; absent = any market. */
+  market?: { locationCode: number; locationName: string | null };
+};
+
+/**
+ * Cross-config keyword-position distribution per day, oldest first — the
+ * project-level visibility chart. For each config only its latest full
+ * (completed, non-subset) run of the day counts, so a re-run can't double a
+ * day. Buckets are disjoint (1 / 2–5 / 6–10 / 11–50); positions past 50 or
+ * null land in "not in top 50" (derived from total by the caller) and
+ * `pages` counts distinct ranking URLs across the aggregated runs.
+ *
+ * Two queries, not one: `keywordsTotal` is a per-run constant, so summing it
+ * across a run's snapshot fan-out (one row per keyword) would multiply it by
+ * the snapshot count. The buckets/pages aggregate snapshots; the totals
+ * aggregate one row per run; this function merges them by day.
+ */
+export async function getProjectTrend(input: {
+  projectId: string;
+  device: "desktop" | "mobile";
+  sinceDays: number;
+} & ProjectTrendFilters) {
+  // Stage 1: the latest full completed run per config per day. substr on the
+  // ISO text timestamp works in both dialects (times are stored as text).
+  const latestRuns = db
+    .select({
+      configId: rankCheckRuns.configId,
+      day: sql<string>`substr(${rankCheckRuns.startedAt}, 1, 10)`.as("day"),
+      latestStartedAt: max(rankCheckRuns.startedAt).as("latest_started_at"),
+    })
+    .from(rankCheckRuns)
+    .innerJoin(
+      rankTrackingConfigs,
+      eq(rankCheckRuns.configId, rankTrackingConfigs.id),
+    )
+    .where(
+      and(
+        eq(rankCheckRuns.projectId, input.projectId),
+        eq(rankCheckRuns.status, "completed"),
+        eq(rankCheckRuns.isSubsetRun, false),
+        gte(rankCheckRuns.startedAt, cutoffTimestamp(input.sinceDays)),
+        input.searchEngine
+          ? eq(rankTrackingConfigs.searchEngine, input.searchEngine)
+          : undefined,
+        input.market
+          ? and(
+              eq(rankTrackingConfigs.locationCode, input.market.locationCode),
+              input.market.locationName === null
+                ? isNull(rankTrackingConfigs.locationName)
+                : eq(
+                    rankTrackingConfigs.locationName,
+                    input.market.locationName,
+                  ),
+            )
+          : undefined,
+      ),
+    )
+    .groupBy(
+      rankCheckRuns.configId,
+      sql`substr(${rankCheckRuns.startedAt}, 1, 10)`,
+    )
+    .as("latest_runs");
+
+  const matchedRun = and(
+    eq(rankCheckRuns.configId, latestRuns.configId),
+    eq(rankCheckRuns.startedAt, latestRuns.latestStartedAt),
+    eq(rankCheckRuns.status, "completed"),
+    eq(rankCheckRuns.isSubsetRun, false),
+  );
+
+  // One row per run: keywordsTotal without the snapshot fan-out.
+  const runsPerDay = await db
+    .select({
+      day: latestRuns.day,
+      keywordsTotal: rankCheckRuns.keywordsTotal,
+    })
+    .from(latestRuns)
+    .innerJoin(rankCheckRuns, matchedRun);
+
+  const bucketsPerDay = await db
+    .select({
+      day: latestRuns.day,
+      total: count(),
+      top1: sql<number>`sum(case when ${rankSnapshots.position} = 1 then 1 else 0 end)`,
+      top2to5: sql<number>`sum(case when ${rankSnapshots.position} between 2 and 5 then 1 else 0 end)`,
+      top6to10: sql<number>`sum(case when ${rankSnapshots.position} between 6 and 10 then 1 else 0 end)`,
+      top11to50: sql<number>`sum(case when ${rankSnapshots.position} between 11 and 50 then 1 else 0 end)`,
+      pages: countDistinct(rankSnapshots.url),
+    })
+    .from(latestRuns)
+    .innerJoin(rankCheckRuns, matchedRun)
+    .innerJoin(
+      rankSnapshots,
+      and(
+        eq(rankSnapshots.runId, rankCheckRuns.id),
+        eq(rankSnapshots.device, input.device),
+      ),
+    )
+    .groupBy(sql`day`)
+    .orderBy(sql`day`);
+
+  const keywordsTotalByDay = new Map<string, number>();
+  for (const row of runsPerDay) {
+    keywordsTotalByDay.set(
+      row.day,
+      (keywordsTotalByDay.get(row.day) ?? 0) + (row.keywordsTotal ?? 0),
+    );
+  }
+  return bucketsPerDay.map((row) => ({
+    ...row,
+    keywordsTotal: keywordsTotalByDay.get(row.day) ?? 0,
+  }));
+}
+
+/**
+ * Current project visibility: the same buckets as getProjectTrend, but from
+ * each keyword's LATEST snapshot (any completed run — subset runs included,
+ * same scope as getSnapshotsForConfig) instead of a day-bucketed history, so
+ * the numbers exist as soon as any check has run, independent of the chart's
+ * history window. Unlike the trend, only ACTIVE configs count: archived
+ * trackers keep their chart history but drop out of the current state, the
+ * same universe the engine/market switches are built from.
+ */
+export async function getProjectSummary(input: {
+  projectId: string;
+  device: "desktop" | "mobile";
+} & ProjectTrendFilters) {
+  const configScope = and(
+    eq(rankTrackingConfigs.projectId, input.projectId),
+    eq(rankTrackingConfigs.isActive, true),
+    input.searchEngine
+      ? eq(rankTrackingConfigs.searchEngine, input.searchEngine)
+      : undefined,
+    input.market
+      ? and(
+          eq(rankTrackingConfigs.locationCode, input.market.locationCode),
+          input.market.locationName === null
+            ? isNull(rankTrackingConfigs.locationName)
+            : eq(rankTrackingConfigs.locationName, input.market.locationName),
+        )
+      : undefined,
+  );
+
+  const scopedConfigIds = db
+    .select({ id: rankTrackingConfigs.id })
+    .from(rankTrackingConfigs)
+    .where(configScope);
+
+  // Snapshots outlive their keyword (no FK, cleanup is best-effort), so
+  // scope through the live keyword rows — a removed keyword's last position
+  // must not surface as a ghost in the current state.
+  const scopedKeywordIds = db
+    .select({ id: rankTrackingKeywords.id })
+    .from(rankTrackingKeywords)
+    .where(inArray(rankTrackingKeywords.configId, scopedConfigIds));
+
+  const scopedRunIds = db
+    .select({ id: rankCheckRuns.id })
+    .from(rankCheckRuns)
+    .where(
+      and(
+        eq(rankCheckRuns.status, "completed"),
+        inArray(rankCheckRuns.configId, scopedConfigIds),
+      ),
+    );
+
+  // Latest-per-keyword via GROUP BY + self-join, the getSnapshotsForConfig
+  // idiom; the device is fixed in WHERE, so keywordId alone groups.
+  const latestPerKeyword = db
+    .select({
+      trackingKeywordId: rankSnapshots.trackingKeywordId,
+      targetCheckedAt: max(rankSnapshots.checkedAt).as("target_checked_at"),
+    })
+    .from(rankSnapshots)
+    .where(
+      and(
+        inArray(rankSnapshots.runId, scopedRunIds),
+        inArray(rankSnapshots.trackingKeywordId, scopedKeywordIds),
+        eq(rankSnapshots.device, input.device),
+      ),
+    )
+    .groupBy(rankSnapshots.trackingKeywordId)
+    .as("latest_per_keyword");
+
+  const [buckets] = await db
+    .select({
+      total: count(),
+      top1: sql<number>`sum(case when ${rankSnapshots.position} = 1 then 1 else 0 end)`,
+      top2to5: sql<number>`sum(case when ${rankSnapshots.position} between 2 and 5 then 1 else 0 end)`,
+      top6to10: sql<number>`sum(case when ${rankSnapshots.position} between 6 and 10 then 1 else 0 end)`,
+      top11to50: sql<number>`sum(case when ${rankSnapshots.position} between 11 and 50 then 1 else 0 end)`,
+      pages: countDistinct(rankSnapshots.url),
+    })
+    .from(rankSnapshots)
+    .innerJoin(
+      latestPerKeyword,
+      and(
+        eq(rankSnapshots.trackingKeywordId, latestPerKeyword.trackingKeywordId),
+        eq(rankSnapshots.checkedAt, latestPerKeyword.targetCheckedAt),
+      ),
+    )
+    .where(
+      and(
+        inArray(rankSnapshots.runId, scopedRunIds),
+        inArray(rankSnapshots.trackingKeywordId, scopedKeywordIds),
+        eq(rankSnapshots.device, input.device),
+      ),
+    );
+
+  // Keywords currently tracked by the in-scope configs — including never
+  // checked ones; the caller derives notChecked from the difference.
+  const [keywords] = await db
+    .select({ count: count() })
+    .from(rankTrackingKeywords)
+    .where(inArray(rankTrackingKeywords.configId, scopedConfigIds));
+
+  return { ...buckets, keywordsTotal: keywords?.count ?? 0 };
 }
 
 export async function getSnapshotsBeforeDate(

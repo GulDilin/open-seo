@@ -15,13 +15,14 @@ import {
   DialogTitle,
 } from "@/client/components/ui/dialog";
 import { Field, FieldLabel } from "@/client/components/ui/field";
+import { Switch } from "@/client/components/ui/switch";
 import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
 import { domainField, normalizeDomain } from "@/types/schemas/domain";
 import { pagesToDepth, estimateRankCheckCredits } from "@/shared/rank-tracking";
 import {
   enginesForCountry,
   isEngineAvailableForCountry,
-  type SearchEngine,
+  SEARCH_ENGINE_LABELS,
 } from "@/shared/search-engines";
 import { getLanguageCode } from "@/client/features/keywords/locations";
 import {
@@ -75,13 +76,6 @@ const DEPTH_ITEMS = Array.from({ length: 10 }, (_, i) => i + 1).map(
     label: `${pages} ${pages === 1 ? "page" : "pages"} (top ${pages * 10} results)`,
   }),
 );
-
-const ENGINE_LABELS: Record<SearchEngine, string> = {
-  google: "Google",
-  yandex: "Yandex",
-  baidu: "Baidu",
-  bing: "Bing",
-};
 
 function validateConfig(values: ConfigFormValues) {
   const fields: Partial<Record<keyof ConfigFormValues, string>> = {};
@@ -195,6 +189,7 @@ function RankTrackingConfigModalContent({
         existingConfig?.locationCode ?? initialMarket.locationCode,
       )[0],
     devices: existingConfig?.devices ?? "mobile",
+    autoKeywordImport: existingConfig?.autoKeywordImport ?? false,
     schedule: existingConfig?.scheduleInterval ?? "weekly",
     // Shown and edited in the browser's timezone; the server converts it to UTC.
     scheduleTime: localScheduleTimeFrom(
@@ -338,7 +333,7 @@ function RankTrackingConfigModalContent({
                       items={enginesForCountry(values.locationCode).map(
                         (engine) => ({
                           value: engine,
-                          label: ENGINE_LABELS[engine],
+                          label: SEARCH_ENGINE_LABELS[engine],
                         }),
                       )}
                       description="Offered engines depend on the country. Position history is per engine, so this choice is permanent for the tracker."
@@ -415,6 +410,26 @@ function RankTrackingConfigModalContent({
                   />
                 )}
               </form.AppField>
+
+              <div className="flex items-center gap-2">
+                <form.Field name="autoKeywordImport">
+                  {(field) => (
+                    <Switch
+                      id="auto-keyword-import"
+                      checked={Boolean(field.state.value)}
+                      onCheckedChange={(checked) =>
+                        field.handleChange(checked)
+                      }
+                    />
+                  )}
+                </form.Field>
+                <FieldLabel
+                  htmlFor="auto-keyword-import"
+                  title="New queries from Search Console and Yandex Webmaster are added automatically before each scheduled check (up to 300 keywords). Each keyword is a paid SERP call on every check."
+                >
+                  Auto-add keywords from connected panels
+                </FieldLabel>
+              </div>
 
               <CostEstimate
                 devices={values.devices}

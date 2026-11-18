@@ -22,6 +22,8 @@ export type SaveConfigInput = {
   locationName: string | undefined;
   schedule: RankTrackingConfig["scheduleInterval"];
   scheduleTime: RankCheckScheduleTime | undefined;
+  // Opt-in panel keyword auto-import; on create it also seeds keywords once.
+  autoKeywordImport: boolean;
 };
 
 function commonFields(input: SaveConfigInput) {
@@ -33,6 +35,7 @@ function commonFields(input: SaveConfigInput) {
     languageCode: input.languageCode,
     scheduleInterval: input.schedule,
     scheduleTime: input.scheduleTime,
+    autoKeywordImport: input.autoKeywordImport,
   };
 }
 

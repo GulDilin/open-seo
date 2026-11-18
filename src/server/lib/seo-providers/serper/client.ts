@@ -53,16 +53,33 @@ async function serperFetch(body: unknown): Promise<Response> {
 
 // One retry on 429/5xx/timeout — paid calls must not retry aggressively
 // (same policy as the incumbent's non-idempotent POSTs in dataforseo/core).
-// A page that still fails after its retry fails the whole search: a partial
-// page list would misreport positions.
+// The retry pauses first: an immediate replay lands in the same rate window
+// that just rejected it. A page that still fails after its retry fails the
+// whole search: a partial page list would misreport positions.
+const SERPER_RETRY_DELAY_MS = 1_000;
+// Retry-After, when Serper sends it, overrides the default; clamped so one
+// header can't stall the enclosing workflow step.
+const SERPER_RETRY_DELAY_MAX_MS = 10_000;
+
+function retryDelayMs(response: Response | null): number {
+  const seconds = Number(response?.headers.get("Retry-After"));
+  if (!Number.isFinite(seconds) || seconds <= 0) return SERPER_RETRY_DELAY_MS;
+  return Math.min(seconds * 1_000, SERPER_RETRY_DELAY_MAX_MS);
+}
+
 async function serperPage(body: unknown): Promise<SerperResponse> {
   let lastError: unknown = null;
+  let delayMs = SERPER_RETRY_DELAY_MS;
   for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
     let response: Response;
     try {
       response = await serperFetch(body);
     } catch (error) {
       lastError = error;
+      delayMs = SERPER_RETRY_DELAY_MS;
       continue;
     }
     if (response.status === 429 || response.status >= 500) {
@@ -70,6 +87,7 @@ async function serperPage(body: unknown): Promise<SerperResponse> {
         "UPSTREAM_UNAVAILABLE",
         `Serper responded ${response.status}`,
       );
+      delayMs = retryDelayMs(response);
       continue;
     }
     if (!response.ok) {
@@ -86,6 +104,7 @@ async function serperPage(body: unknown): Promise<SerperResponse> {
         "UPSTREAM_UNAVAILABLE",
         "Serper response failed schema validation",
       );
+      delayMs = SERPER_RETRY_DELAY_MS;
       continue;
     }
     return parsed.data;

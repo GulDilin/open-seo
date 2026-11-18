@@ -13,6 +13,15 @@ import { z } from "zod";
 export const SEARCH_ENGINES = ["google", "yandex", "baidu", "bing"] as const;
 export type SearchEngine = (typeof SEARCH_ENGINES)[number];
 
+/** Human labels for pickers and filters — keyed by the engine table so a new
+ *  engine fails to compile here instead of rendering its raw slug somewhere. */
+export const SEARCH_ENGINE_LABELS: Record<SearchEngine, string> = {
+  google: "Google",
+  yandex: "Yandex",
+  baidu: "Baidu",
+  bing: "Bing",
+};
+
 /** The single validation point for engine names at every trust boundary. */
 export const searchEngineSchema = z.enum(SEARCH_ENGINES);
 /** Form-friendly field: omitted engines mean today's default, google. */

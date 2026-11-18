@@ -1,5 +1,6 @@
 import { RankTrackingRepository } from "@/server/features/rank-tracking/repositories/RankTrackingRepository";
 import { beginRankCheckRun } from "@/server/features/rank-tracking/services/rankCheckRunGuards";
+import { syncAutoImportedKeywords } from "@/server/features/rank-tracking/services/autoKeywordImport";
 import { customerHasPaidPlan } from "@/server/billing/subscription";
 import { isHostedServerAuthMode } from "@/server/lib/runtime-env";
 import {
@@ -33,6 +34,12 @@ const TICK_DEADLINE_MS = 3 * 60_000;
 // configs leave no durable trace on their row, so the summary names them.
 const ALREADY_RUNNING_IDS_CAP = 20;
 
+// Auto-import reads up to two panels per (projectId, domain) key — external
+// HTTP with no deadline of its own, so it races a hard cap: a hung panel must
+// not eat the tick (overflow keys simply sync on a later tick).
+const AUTO_IMPORT_KEYS_PER_TICK = 25;
+const AUTO_IMPORT_TIMEOUT_MS = 30_000;
+
 // Cron body for the `scheduled` Worker handler: start a rank-check run for every
 // config that's due. Wrapped in `withPgClient` at the entrypoint (server.ts).
 export async function runScheduledRankChecks(env: Env) {
@@ -40,6 +47,36 @@ export async function runScheduledRankChecks(env: Env) {
   const dueConfigs =
     await RankTrackingRepository.getDueConfigsWithOrganization(nowIso);
   const isHosted = await isHostedServerAuthMode();
+
+  // Armed BEFORE the auto-import so panel latency counts against the tick's
+  // wall clock, exactly like the per-config loop below.
+  const deadline = Date.now() + TICK_DEADLINE_MS;
+
+  // Panel auto-import BEFORE the keyword count so freshly imported keywords
+  // are both checked by this tick's run and counted in the budget math. The
+  // sync isolates its own per-config failures and caps its keys per tick;
+  // this race + catch is the outer belt — a hung or throwing import must
+  // never stop the tick's checks.
+  let autoImported = 0;
+  const autoImportConfigs = dueConfigs.filter(
+    (config) => config.autoKeywordImport,
+  );
+  if (autoImportConfigs.length > 0) {
+    try {
+      autoImported = await Promise.race([
+        syncAutoImportedKeywords(
+          autoImportConfigs,
+          AUTO_IMPORT_KEYS_PER_TICK,
+        ),
+        new Promise<number>((resolve) =>
+          setTimeout(() => resolve(0), AUTO_IMPORT_TIMEOUT_MS),
+        ),
+      ]);
+    } catch (err) {
+      console.error("[cron] Panel keyword auto-import failed:", err);
+    }
+  }
+
   const keywordCounts = await RankTrackingRepository.getKeywordCountsForConfigs(
     dueConfigs.map((config) => config.id),
   );
@@ -58,7 +95,6 @@ export async function runScheduledRankChecks(env: Env) {
     return check;
   };
 
-  const deadline = Date.now() + TICK_DEADLINE_MS;
   let unitsStarted = 0;
   let started = 0;
   let stoppedByBudget = false;
@@ -237,6 +273,7 @@ export async function runScheduledRankChecks(env: Env) {
     event: "rank_tracking_scheduler_summary",
     candidates: dueConfigs.length,
     started,
+    autoImported,
     unitsStarted,
     budget: SCHEDULED_TASK_UNIT_BUDGET,
     stoppedByBudget,

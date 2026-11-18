@@ -89,6 +89,9 @@ export const createConfigSchema = z.object({
   serpDepth: z.number().int().min(10).max(100).multipleOf(10),
   scheduleInterval: scheduleEnum.optional(),
   scheduleTime: scheduleTimeSchema.optional(),
+  // Opt-in: pull new keywords from the project's connected panels before
+  // every scheduled check (capped; each keyword is a paid SERP call).
+  autoKeywordImport: z.boolean().optional(),
 });
 
 export const updateConfigSchema = z.object({
@@ -102,6 +105,7 @@ export const updateConfigSchema = z.object({
   serpDepth: z.number().int().min(10).max(100).multipleOf(10).optional(),
   scheduleInterval: scheduleEnum.optional(),
   scheduleTime: scheduleTimeSchema.optional(),
+  autoKeywordImport: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -170,6 +174,21 @@ export const getConfigTrendSchema = z.object({
   configId: z.string().uuid(),
   device: deviceEnum,
   sinceDays: sinceDaysField,
+});
+
+export const getProjectTrendSchema = z.object({
+  projectId: z.string().uuid(),
+  device: deviceEnum,
+  sinceDays: sinceDaysField,
+  searchEngine: searchEngineField.optional(),
+  // locationName null = the national market; absent locationCode = any market.
+  locationCode: z.number().int().positive().optional(),
+  locationName: z.string().min(1).max(200).nullable().optional(),
+});
+
+/** The trend without its history window: current state only. */
+export const getProjectSummarySchema = getProjectTrendSchema.omit({
+  sinceDays: true,
 });
 
 export const getPositionMatrixSchema = z.object({

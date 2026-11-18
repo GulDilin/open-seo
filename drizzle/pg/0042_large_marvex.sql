@@ -1,0 +1,1 @@
+ALTER TABLE "rank_tracking_configs" ADD COLUMN "auto_keyword_import" boolean DEFAULT false NOT NULL;

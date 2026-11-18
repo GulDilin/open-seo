@@ -88,10 +88,18 @@ function siteCoversDomain(
 
 /** Keyword suggestions from the site panels connected to a project. Each
  *  connected panel is fetched independently — one dead or missing panel never
- *  fails the request, it just contributes nothing. */
+ *  fails the request, it just contributes nothing. `limit` raises the cap for
+ *  the auto-import sync; the manual pick UI keeps the 50 default. `source`
+ *  restricts to one panel's queries (the auto-import sync caps per source, so
+ *  a busy panel can't consume the other's allocation). `subtract: "domain"`
+ *  hides only keywords tracked for THIS domain instead of the whole project —
+ *  auto-import for one domain must not be blocked by another domain's tracker. */
 async function get(input: {
   projectId: string;
   domain?: string;
+  limit?: number;
+  source?: PanelKeywordSource;
+  subtract?: "project" | "domain";
 }): Promise<PanelKeywordSuggestionsResult> {
   const [gscConnection, yandexConnection] = await Promise.all([
     GscService.getConnection(input.projectId),
@@ -102,7 +110,11 @@ async function get(input: {
     source: PanelKeywordSource;
     run: () => Promise<PanelKeywordSuggestion[]>;
   }> = [];
-  if (gscConnection && siteCoversDomain(gscConnection.siteUrl, input.domain)) {
+  if (
+    gscConnection &&
+    siteCoversDomain(gscConnection.siteUrl, input.domain) &&
+    (!input.source || input.source === "gsc")
+  ) {
     fetches.push({
       source: "gsc",
       run: () => fetchGscQueries(input.projectId),
@@ -110,7 +122,8 @@ async function get(input: {
   }
   if (
     yandexConnection &&
-    siteCoversDomain(yandexConnection.hostUrl, input.domain)
+    siteCoversDomain(yandexConnection.hostUrl, input.domain) &&
+    (!input.source || input.source === "yandex_webmaster")
   ) {
     fetches.push({
       source: "yandex_webmaster",
@@ -133,12 +146,22 @@ async function get(input: {
 
   const tracked = new Set(
     (
-      await RankTrackingRepository.getKeywordsForActiveConfigs(input.projectId)
+      input.subtract === "domain" && input.domain
+        ? // Domain-scoped subtraction: a query another domain already tracks
+          // must not block THIS domain's auto-import.
+          await RankTrackingRepository.getKeywordsForActiveConfigs(
+            input.projectId,
+            input.domain,
+          )
+        : await RankTrackingRepository.getKeywordsForActiveConfigs(
+            input.projectId,
+          )
     ).map((kw) => kw.keyword.trim().toLowerCase()),
   );
 
   // Highest impressions first. A query reported by both panels keeps the panel
   // that saw more impressions for it, so the metrics stay single-engine honest.
+  const maxSuggestions = input.limit ?? MAX_SUGGESTIONS;
   rows.sort((a, b) => b.impressions - a.impressions);
   const seen = new Set<string>();
   const suggestions: PanelKeywordSuggestion[] = [];
@@ -147,7 +170,7 @@ async function get(input: {
     if (!key || tracked.has(key) || seen.has(key)) continue;
     seen.add(key);
     suggestions.push({ ...row, query: row.query.trim() });
-    if (suggestions.length >= MAX_SUGGESTIONS) break;
+    if (suggestions.length >= maxSuggestions) break;
   }
 
   return { suggestions, sources: fetches.map((fetch) => fetch.source) };

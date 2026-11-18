@@ -63,6 +63,7 @@ beforeAll(async () => {
       serp_depth INTEGER NOT NULL,
       schedule_interval TEXT NOT NULL DEFAULT 'weekly',
       location_name TEXT,
+      auto_keyword_import INTEGER NOT NULL DEFAULT 0,
       is_active INTEGER NOT NULL DEFAULT 1,
       last_checked_at TEXT,
       next_check_at TEXT,
@@ -136,11 +137,12 @@ async function seedConfig(input: {
   scheduleInterval?: string;
   isActive?: number;
   lastSkipReason?: string | null;
+  searchEngine?: string;
 }) {
   await client.execute({
     sql: `INSERT INTO rank_tracking_configs
-      (id, project_id, domain, serp_depth, schedule_interval, is_active, next_check_at, last_skip_reason)
-      VALUES (?, ?, ?, 20, ?, ?, ?, ?)`,
+      (id, project_id, domain, serp_depth, schedule_interval, is_active, next_check_at, last_skip_reason, search_engine)
+      VALUES (?, ?, ?, 20, ?, ?, ?, ?, ?)`,
     args: [
       input.id,
       input.projectId ?? "proj_1",
@@ -151,6 +153,7 @@ async function seedConfig(input: {
         ? "2026-07-01T05:00:00.000Z"
         : input.nextCheckAt,
       input.lastSkipReason ?? null,
+      input.searchEngine ?? "google",
     ],
   });
 }
@@ -357,6 +360,58 @@ function daysAgo(days: number) {
     .replace("T", " ");
 }
 
+async function seedKeyword(configId: string, keywordId: string) {
+  await client.execute({
+    sql: "INSERT INTO rank_tracking_keywords (id, config_id, keyword) VALUES (?, ?, ?)",
+    args: [keywordId, configId, keywordId],
+  });
+}
+
+/** Seed a completed run with its snapshots; checked_at mirrors started_at. */
+async function seedTrendRun(input: {
+  runId: string;
+  configId: string;
+  startedAt: string;
+  status?: string;
+  isSubsetRun?: boolean;
+  keywordsTotal?: number;
+  snapshots: Array<{
+    keywordId: string;
+    device?: "desktop" | "mobile";
+    position: number | null;
+    url?: string;
+  }>;
+}) {
+  await client.execute({
+    sql: `INSERT INTO rank_check_runs
+      (id, config_id, project_id, status, keywords_total, is_subset_run, started_at)
+      VALUES (?, ?, 'proj_1', ?, ?, ?, ?)`,
+    args: [
+      input.runId,
+      input.configId,
+      input.status ?? "completed",
+      input.keywordsTotal ?? input.snapshots.length,
+      input.isSubsetRun ? 1 : 0,
+      input.startedAt,
+    ],
+  });
+  for (const snapshot of input.snapshots) {
+    await client.execute({
+      sql: `INSERT INTO rank_snapshots
+        (run_id, tracking_keyword_id, keyword, device, position, url, checked_at)
+        VALUES (?, ?, 'kw', ?, ?, ?, ?)`,
+      args: [
+        input.runId,
+        snapshot.keywordId,
+        snapshot.device ?? "desktop",
+        snapshot.position,
+        snapshot.url ?? null,
+        input.startedAt,
+      ],
+    });
+  }
+}
+
 describe("getConfigTrend", () => {
   it("keeps every row of a run inside the range and drops a run that started before it", async () => {
     // run_b started before the 30-day cutoff, but one snapshot is after it.
@@ -394,6 +449,292 @@ async function seedRun(id: string, status: string) {
     args: [id, status, NOW],
   });
 }
+
+describe("getProjectTrend", () => {
+  it("sums per-day buckets across configs and counts distinct ranking pages", async () => {
+    await seedProject("proj_1");
+    await seedConfig({ id: "cfg_g" });
+    await seedConfig({ id: "cfg_y", searchEngine: "yandex" });
+
+    await seedTrendRun({
+      runId: "g1",
+      configId: "cfg_g",
+      startedAt: daysAgo(2),
+      // Two snapshots but three tracked keywords: one check failed. The
+      // per-day keywordsTotal must stay 3 — not multiplied by snapshots.
+      keywordsTotal: 3,
+      snapshots: [
+        { keywordId: "g_kw1", position: 1, url: "https://s/a" },
+        { keywordId: "g_kw2", position: 7, url: "https://s/b" },
+      ],
+    });
+    await seedTrendRun({
+      runId: "y1",
+      configId: "cfg_y",
+      startedAt: daysAgo(2),
+      snapshots: [
+        { keywordId: "y_kw1", position: 3, url: "https://s/c" },
+        // A mobile row never leaks into the desktop trend.
+        { keywordId: "y_kw1", device: "mobile", position: 2, url: "https://s/m" },
+      ],
+    });
+    await seedTrendRun({
+      runId: "g2",
+      configId: "cfg_g",
+      startedAt: daysAgo(1),
+      snapshots: [{ keywordId: "g_kw1", position: 2, url: "https://s/a" }],
+    });
+
+    const trend = await RankTrackingRepository.getProjectTrend({
+      projectId: "proj_1",
+      device: "desktop",
+      sinceDays: 30,
+    });
+
+    expect(trend).toHaveLength(2);
+    const [dayOlder, dayNewer] = trend;
+    expect(Number(dayOlder.total)).toBe(3);
+    expect(Number(dayOlder.top1)).toBe(1);
+    expect(Number(dayOlder.top2to5)).toBe(1);
+    expect(Number(dayOlder.top6to10)).toBe(1);
+    expect(Number(dayOlder.pages)).toBe(3);
+    // g1's 3 tracked + y1's 2 tracked, not keywordsTotal × snapshot rows.
+    expect(Number(dayOlder.keywordsTotal)).toBe(5);
+    expect(Number(dayNewer.total)).toBe(1);
+    expect(Number(dayNewer.top2to5)).toBe(1);
+    expect(Number(dayNewer.pages)).toBe(1);
+  });
+
+  it("counts only the latest full run of a config per day", async () => {
+    await seedProject("proj_1");
+    await seedConfig({ id: "cfg_a" });
+    const day = daysAgo(1).slice(0, 11);
+
+    await seedTrendRun({
+      runId: "early",
+      configId: "cfg_a",
+      startedAt: `${day}01:00:00`,
+      snapshots: [{ keywordId: "kw1", position: 1, url: "https://s/a" }],
+    });
+    await seedTrendRun({
+      runId: "late",
+      configId: "cfg_a",
+      startedAt: `${day}23:00:00`,
+      snapshots: [{ keywordId: "kw1", position: 8, url: "https://s/a" }],
+    });
+
+    const trend = await RankTrackingRepository.getProjectTrend({
+      projectId: "proj_1",
+      device: "desktop",
+      sinceDays: 30,
+    });
+
+    expect(trend).toHaveLength(1);
+    expect(Number(trend[0].total)).toBe(1);
+    expect(Number(trend[0].top1)).toBe(0);
+    expect(Number(trend[0].top6to10)).toBe(1);
+  });
+
+  it("excludes subset and non-completed runs", async () => {
+    await seedProject("proj_1");
+    await seedConfig({ id: "cfg_a" });
+    const day = daysAgo(1).slice(0, 11);
+
+    await seedTrendRun({
+      runId: "full",
+      configId: "cfg_a",
+      startedAt: `${day}01:00:00`,
+      snapshots: [{ keywordId: "kw1", position: 5 }],
+    });
+    await seedTrendRun({
+      runId: "subset",
+      configId: "cfg_a",
+      startedAt: `${day}02:00:00`,
+      isSubsetRun: true,
+      snapshots: [{ keywordId: "kw1", position: 1 }],
+    });
+    await seedTrendRun({
+      runId: "running",
+      configId: "cfg_a",
+      startedAt: `${day}03:00:00`,
+      status: "running",
+      snapshots: [{ keywordId: "kw1", position: 1 }],
+    });
+
+    const trend = await RankTrackingRepository.getProjectTrend({
+      projectId: "proj_1",
+      device: "desktop",
+      sinceDays: 30,
+    });
+
+    expect(trend).toHaveLength(1);
+    expect(Number(trend[0].total)).toBe(1);
+    expect(Number(trend[0].top2to5)).toBe(1);
+  });
+
+  it("filters by search engine", async () => {
+    await seedProject("proj_1");
+    await seedConfig({ id: "cfg_g" });
+    await seedConfig({ id: "cfg_y", searchEngine: "yandex" });
+
+    await seedTrendRun({
+      runId: "g1",
+      configId: "cfg_g",
+      startedAt: daysAgo(1),
+      snapshots: [{ keywordId: "g_kw1", position: 1 }],
+    });
+    await seedTrendRun({
+      runId: "y1",
+      configId: "cfg_y",
+      startedAt: daysAgo(1),
+      snapshots: [{ keywordId: "y_kw1", position: 9 }],
+    });
+
+    const trend = await RankTrackingRepository.getProjectTrend({
+      projectId: "proj_1",
+      device: "desktop",
+      sinceDays: 30,
+      searchEngine: "yandex",
+    });
+
+    expect(trend).toHaveLength(1);
+    expect(Number(trend[0].total)).toBe(1);
+    expect(Number(trend[0].top6to10)).toBe(1);
+  });
+});
+
+describe("getProjectSummary", () => {
+  it("buckets each keyword's latest snapshot and keeps stale keywords", async () => {
+    await seedProject("proj_1");
+    await seedConfig({ id: "cfg_a" });
+    await seedKeyword("cfg_a", "kw1");
+    await seedKeyword("cfg_a", "kw2");
+    await seedKeyword("cfg_a", "kw_never_checked");
+
+    await seedTrendRun({
+      runId: "older",
+      configId: "cfg_a",
+      startedAt: daysAgo(2),
+      snapshots: [
+        { keywordId: "kw1", position: 1, url: "https://s/a" },
+        { keywordId: "kw2", position: 3, url: "https://s/b" },
+      ],
+    });
+    await seedTrendRun({
+      runId: "newer",
+      configId: "cfg_a",
+      startedAt: daysAgo(1),
+      snapshots: [
+        // kw1 dropped from 1 to 8 — the latest snapshot wins, not any day's run.
+        { keywordId: "kw1", position: 8, url: "https://s/a2" },
+        // A mobile row never leaks into the desktop summary.
+        { keywordId: "kw2", device: "mobile", position: 2, url: "https://s/m" },
+      ],
+    });
+
+    const summary = await RankTrackingRepository.getProjectSummary({
+      projectId: "proj_1",
+      device: "desktop",
+    });
+
+    expect(Number(summary.total)).toBe(2); // kw1 + kw2; never-checked excluded
+    expect(Number(summary.top1)).toBe(0);
+    expect(Number(summary.top2to5)).toBe(1); // kw2's last known desktop position
+    expect(Number(summary.top6to10)).toBe(1); // kw1's new position, not its old 1
+    expect(Number(summary.pages)).toBe(2);
+    expect(Number(summary.keywordsTotal)).toBe(3);
+  });
+
+  it("ignores archived trackers' keywords and snapshots", async () => {
+    await seedProject("proj_1");
+    await seedConfig({ id: "cfg_active" });
+    await seedConfig({ id: "cfg_archived", isActive: 0 });
+    await seedKeyword("cfg_active", "kw1");
+    await seedKeyword("cfg_archived", "kw_gone");
+
+    await seedTrendRun({
+      runId: "r_active",
+      configId: "cfg_active",
+      startedAt: daysAgo(1),
+      snapshots: [{ keywordId: "kw1", position: 1, url: "https://s/a" }],
+    });
+    await seedTrendRun({
+      runId: "r_archived",
+      configId: "cfg_archived",
+      startedAt: daysAgo(1),
+      snapshots: [{ keywordId: "kw_gone", position: 2, url: "https://s/g" }],
+    });
+
+    const summary = await RankTrackingRepository.getProjectSummary({
+      projectId: "proj_1",
+      device: "desktop",
+    });
+
+    expect(Number(summary.total)).toBe(1);
+    expect(Number(summary.top1)).toBe(1);
+    expect(Number(summary.keywordsTotal)).toBe(1);
+  });
+
+  it("ignores snapshots of keywords no longer tracked", async () => {
+    await seedProject("proj_1");
+    await seedConfig({ id: "cfg_a" });
+    await seedKeyword("cfg_a", "kw_alive");
+    await seedKeyword("cfg_a", "kw_removed");
+
+    await seedTrendRun({
+      runId: "ghost_run",
+      configId: "cfg_a",
+      startedAt: daysAgo(1),
+      snapshots: [
+        { keywordId: "kw_alive", position: 5, url: "https://s/a" },
+        { keywordId: "kw_removed", position: 1, url: "https://s/ghost" },
+      ],
+    });
+    // Pre-fix data shape: keyword row deleted, snapshot left behind.
+    await client.execute(
+      "DELETE FROM rank_tracking_keywords WHERE id = 'kw_removed'",
+    );
+
+    const summary = await RankTrackingRepository.getProjectSummary({
+      projectId: "proj_1",
+      device: "desktop",
+    });
+
+    expect(Number(summary.total)).toBe(1);
+    expect(Number(summary.top1)).toBe(0); // the ghost's #1 must not count
+    expect(Number(summary.top2to5)).toBe(1);
+    expect(Number(summary.keywordsTotal)).toBe(1);
+  });
+});
+
+describe("removeKeywordsFromConfig", () => {
+  it("deletes the removed keywords' snapshots with them", async () => {
+    await seedProject("proj_1");
+    await seedConfig({ id: "cfg_a" });
+    await seedKeyword("cfg_a", "kw1");
+    await seedKeyword("cfg_a", "kw2");
+    await seedTrendRun({
+      runId: "r1",
+      configId: "cfg_a",
+      startedAt: daysAgo(1),
+      snapshots: [
+        { keywordId: "kw1", position: 1, url: "https://s/a" },
+        { keywordId: "kw2", position: 2, url: "https://s/b" },
+      ],
+    });
+
+    const removed = await RankTrackingRepository.removeKeywordsFromConfig(
+      ["kw1"],
+      "cfg_a",
+    );
+
+    expect(removed).toEqual(["kw1"]);
+    const remaining = await client.execute(
+      "SELECT tracking_keyword_id AS kw FROM rank_snapshots ORDER BY kw",
+    );
+    expect(remaining.rows.map((row) => row.kw)).toEqual(["kw2"]);
+  });
+});
 
 function snapshotRow(
   runId: string,

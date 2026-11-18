@@ -190,4 +190,42 @@ describe("serperSearch pagination", () => {
       1, 2, 3, 11, 12, 13, 21, 22, 23,
     ]);
   });
+
+  it("pauses before replaying a 429, honoring Retry-After", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn<typeof fetch>();
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response("rate limited", {
+            status: 429,
+            headers: { "Retry-After": "2" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          serperPageResponse(["https://target.example/1"]),
+        );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const pending = serperSearch({
+        keyword: "shoes",
+        country: "us",
+        language: "en",
+        depth: 10,
+        stopDomain: "target.example",
+      });
+      // One millisecond before Retry-After expires the replay hasn't fired;
+      // an immediate retry (the old behavior) would have called twice here.
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      const response = await pending;
+      vi.unstubAllGlobals();
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(response.organic[0]?.link).toBe("https://target.example/1");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -128,12 +128,19 @@ function SelectionCheckbox<TData>({
       }}
       onClick={(event) => {
         event.stopPropagation();
-        // A shift+click selects the range, so the checkbox must not toggle.
-        if (applyShiftRangeSelection(event, row, table, anchorRef)) {
-          event.preventBaseUIHandler();
-        }
+        // This handler alone owns the toggle. Letting Base UI also toggle
+        // through onCheckedChange re-enters render in Firefox (the two
+        // disagree and loop until "Script terminated by timeout"), so the
+        // default and Base UI's own handling are both suppressed here — which
+        // also drops Base UI's built-in readOnly/disabled gate, so guard here.
+        event.preventDefault();
+        event.preventBaseUIHandler();
+        if (!row.getCanSelect()) return;
+        if (applyShiftRangeSelection(event, row, table, anchorRef)) return;
+        // Set (not flip): a duplicated click dispatch converges instead of
+        // toggling twice.
+        row.toggleSelected(!row.getIsSelected());
       }}
-      onCheckedChange={(checked) => row.toggleSelected(checked)}
     />
   );
 }

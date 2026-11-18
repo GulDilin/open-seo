@@ -15,6 +15,7 @@ import {
   rankTrackingConfigs,
   rankCheckRuns,
   rankTrackingKeywords,
+  rankSnapshots,
   projects,
 } from "@/db/schema";
 import { DB_BATCH_SIZE, executeInBatches } from "@/db/runBatch";
@@ -27,6 +28,8 @@ import {
   getEarliestSnapshotsForKeywords,
   getKeywordHistory,
   getConfigTrend,
+  getProjectTrend,
+  getProjectSummary,
   getPositionMatrix,
 } from "./snapshotQueries";
 import {
@@ -152,6 +155,7 @@ async function getDueConfigsWithOrganization(nowIso: string) {
         serpDepth: rankTrackingConfigs.serpDepth,
         scheduleInterval: rankTrackingConfigs.scheduleInterval,
         nextCheckAt: rankTrackingConfigs.nextCheckAt,
+        autoKeywordImport: rankTrackingConfigs.autoKeywordImport,
         organizationId: projects.organizationId,
       })
       .from(rankTrackingConfigs)
@@ -229,8 +233,10 @@ async function getKeywordsForConfig(configId: string) {
 }
 
 /** Distinct keywords across a project's active configs — the pool suggestion
- *  sources subtract so already-tracked keywords are never re-suggested. */
-async function getKeywordsForActiveConfigs(projectId: string) {
+ *  sources subtract so already-tracked keywords are never re-suggested. With
+ *  `domain`, only that domain's configs count (auto-import of one domain must
+ *  not be blocked by another domain's trackers). */
+async function getKeywordsForActiveConfigs(projectId: string, domain?: string) {
   return db
     .selectDistinct({ keyword: rankTrackingKeywords.keyword })
     .from(rankTrackingKeywords)
@@ -242,6 +248,7 @@ async function getKeywordsForActiveConfigs(projectId: string) {
       and(
         eq(rankTrackingConfigs.projectId, projectId),
         eq(rankTrackingConfigs.isActive, true),
+        ...(domain ? [eq(rankTrackingConfigs.domain, domain)] : []),
       ),
     );
 }
@@ -289,6 +296,16 @@ async function removeKeywordsFromConfig(
       )
       .returning({ id: rankTrackingKeywords.id });
     removedIds.push(...removed.map((row) => row.id));
+  }
+  // Snapshots have no FK to their keyword — delete them with it, or the last
+  // position of a removed keyword keeps surfacing in aggregates as a ghost.
+  for (let i = 0; i < removedIds.length; i += deleteBatchSize) {
+    await db.delete(rankSnapshots).where(
+      inArray(
+        rankSnapshots.trackingKeywordId,
+        removedIds.slice(i, i + deleteBatchSize),
+      ),
+    );
   }
   return removedIds;
 }
@@ -447,5 +464,7 @@ export const RankTrackingRepository = {
   getEarliestSnapshotsForKeywords,
   getKeywordHistory,
   getConfigTrend,
+  getProjectTrend,
+  getProjectSummary,
   getPositionMatrix,
 };

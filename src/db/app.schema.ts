@@ -243,6 +243,15 @@ export const rankTrackingConfigs = sqliteTable(
       .notNull()
       .default("weekly"),
     locationName: text("location_name"),
+    // Opt-in: pull new keywords from the project's connected panels (Search
+    // Console, Yandex Webmaster) before each scheduled check, so trackers
+    // populate without manual entry. Off by default — every imported keyword
+    // is a paid SERP call per run.
+    autoKeywordImport: integer("auto_keyword_import", {
+      mode: "boolean",
+    })
+      .notNull()
+      .default(false),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
     lastCheckedAt: text("last_checked_at"),
     nextCheckAt: text("next_check_at"),

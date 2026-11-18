@@ -58,6 +58,7 @@ async function createConfig(input: {
   serpDepth: number;
   scheduleInterval?: RankTrackingConfig["scheduleInterval"];
   scheduleTime?: RankCheckScheduleTime;
+  autoKeywordImport?: boolean;
 }) {
   const normalizedDomain = normalizeDomain(input.domain);
 
@@ -151,6 +152,9 @@ async function createConfig(input: {
       isActive: true,
       devices: input.devices ?? "both",
       serpDepth: input.serpDepth,
+      // Re-add from a payload without the field (stale bundle) keeps the
+      // archived tracker's opt-in instead of silently turning it off.
+      autoKeywordImport: input.autoKeywordImport ?? existing.autoKeywordImport,
       scheduleInterval,
       nextCheckAt,
       // Drop any stale skip reason from before it was archived so the
@@ -172,6 +176,7 @@ async function createConfig(input: {
     locationName,
     devices: input.devices ?? "both",
     serpDepth: input.serpDepth,
+    autoKeywordImport: input.autoKeywordImport ?? false,
     scheduleInterval,
     nextCheckAt,
     isActive: true,
@@ -197,6 +202,7 @@ async function updateConfig(
     serpDepth?: number;
     scheduleInterval?: RankTrackingConfig["scheduleInterval"];
     scheduleTime?: RankCheckScheduleTime;
+    autoKeywordImport?: boolean;
     isActive?: boolean;
   },
 ) {
@@ -266,6 +272,8 @@ async function updateConfig(
     updates.locationName = input.locationName;
   if (input.devices !== undefined) updates.devices = input.devices;
   if (input.serpDepth !== undefined) updates.serpDepth = input.serpDepth;
+  if (input.autoKeywordImport !== undefined)
+    updates.autoKeywordImport = input.autoKeywordImport;
   if (input.isActive !== undefined) updates.isActive = input.isActive;
 
   const scheduleInterval = input.scheduleInterval ?? existing.scheduleInterval;

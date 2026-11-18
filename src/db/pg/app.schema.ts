@@ -246,6 +246,10 @@ export const rankTrackingConfigs = pgTable(
       .notNull()
       .default("weekly"),
     locationName: text("location_name"),
+    // Mirrors sqlite: opt-in panel keyword auto-import per tracker.
+    autoKeywordImport: boolean("auto_keyword_import")
+      .notNull()
+      .default(false),
     isActive: boolean("is_active").notNull().default(true),
     lastCheckedAt: timestampColumn("last_checked_at"),
     nextCheckAt: timestampColumn("next_check_at"),

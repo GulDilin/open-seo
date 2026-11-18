@@ -45,6 +45,11 @@ export const SECONDS_PER_BATCH = 6;
 /** Soft application limit for keywords per rank tracking config */
 export const MAX_KEYWORDS_PER_CONFIG = 1000;
 
+/** Cap for the opt-in "pull keywords from connected panels" sync. Every
+ *  imported keyword is a paid SERP call on every check, so auto-import stays
+ *  well below MAX_KEYWORDS_PER_CONFIG on purpose. */
+export const AUTO_IMPORT_KEYWORDS_PER_CONFIG = 300;
+
 /** Maximum length of a single tracked keyword */
 export const MAX_TRACKED_KEYWORD_LENGTH = 200;
 

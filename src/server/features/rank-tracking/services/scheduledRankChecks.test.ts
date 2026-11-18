@@ -13,6 +13,7 @@ type DueConfigRow = {
   serpDepth: number;
   scheduleInterval: "daily" | "weekly" | "monthly" | "manual";
   nextCheckAt: string | null;
+  autoKeywordImport: boolean;
   organizationId: string;
 };
 
@@ -46,9 +47,14 @@ const mocks = vi.hoisted(() => ({
     >(),
   customerHasPaidPlan: vi.fn<(organizationId: string) => Promise<boolean>>(),
   isHostedServerAuthMode: vi.fn<() => Promise<boolean>>(),
+  syncAutoImportedKeywords:
+    vi.fn<(configs: DueConfigRow[], maxKeys?: number) => Promise<number>>(),
 }));
 
 vi.mock("cloudflare:workers", () => ({ env: {} }));
+vi.mock("./autoKeywordImport", () => ({
+  syncAutoImportedKeywords: mocks.syncAutoImportedKeywords,
+}));
 vi.mock(
   "@/server/features/rank-tracking/repositories/RankTrackingRepository",
   () => ({
@@ -84,6 +90,7 @@ function dueConfig(overrides: Partial<DueConfigRow> = {}): DueConfigRow {
     serpDepth: 20,
     scheduleInterval: "daily" as const,
     nextCheckAt: "2026-01-01T00:00:00.000Z",
+    autoKeywordImport: false,
     organizationId: "org_1",
     ...overrides,
   };
@@ -99,6 +106,7 @@ describe("runScheduledRankChecks", () => {
       new Map([["config_1", 5]]),
     );
     mocks.getDueConfigsWithOrganization.mockResolvedValue([dueConfig()]);
+    mocks.syncAutoImportedKeywords.mockResolvedValue(0);
   });
 
   it("advances a free config with plan_required instead of starting a workflow", async () => {
@@ -370,5 +378,38 @@ describe("runScheduledRankChecks", () => {
 
     expect(mocks.customerHasPaidPlan).not.toHaveBeenCalled();
     expect(mocks.beginRankCheckRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("syncs panel keywords before counting so new keywords join this tick's budget", async () => {
+    mocks.getDueConfigsWithOrganization.mockResolvedValue([
+      dueConfig({ autoKeywordImport: true }),
+      dueConfig({ id: "config_plain" }),
+    ]);
+
+    await runScheduledRankChecks(testEnv);
+
+    // Only opted-in configs, capped at the tick's key budget.
+    expect(mocks.syncAutoImportedKeywords).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: "config_1", autoKeywordImport: true })],
+      25,
+    );
+    const syncOrder = mocks.syncAutoImportedKeywords.mock.invocationCallOrder[0];
+    const countOrder =
+      mocks.getKeywordCountsForConfigs.mock.invocationCallOrder[0];
+    expect(syncOrder).toBeLessThan(countOrder);
+  });
+
+  it("survives a sync failure and still starts the run", async () => {
+    mocks.getDueConfigsWithOrganization.mockResolvedValue([
+      dueConfig({ autoKeywordImport: true }),
+    ]);
+    mocks.syncAutoImportedKeywords.mockRejectedValue(new Error("panel down"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await runScheduledRankChecks(testEnv);
+
+    // The tick proceeds: the run starts on the existing keywords.
+    expect(mocks.beginRankCheckRun).toHaveBeenCalledTimes(1);
+    errorSpy.mockRestore();
   });
 });

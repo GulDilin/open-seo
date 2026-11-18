@@ -118,6 +118,37 @@ describe("RankTrackingService.createConfig", () => {
     expect(mocks.createConfig).not.toHaveBeenCalled();
   });
 
+  it("persists the auto-keyword-import opt-in on insert and reactivation", async () => {
+    mocks.getConfigByProjectDomainMarket.mockResolvedValue(null);
+    mocks.getConfigsForProject.mockResolvedValue([]);
+    mocks.createConfig.mockResolvedValue(undefined);
+
+    await RankTrackingService.createConfig({
+      ...baseInput,
+      autoKeywordImport: true,
+    });
+    expect(mocks.createConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ autoKeywordImport: true }),
+    );
+
+    // Reactivation applies the freshly chosen toggle, not the archived value.
+    mocks.getConfigByProjectDomainMarket.mockResolvedValue(archivedConfig);
+    mocks.updateConfig.mockResolvedValue(undefined);
+    mocks.getConfigById.mockResolvedValue({
+      ...archivedConfig,
+      isActive: true,
+    });
+    await RankTrackingService.createConfig({
+      ...baseInput,
+      autoKeywordImport: true,
+    });
+    expect(mocks.updateConfig).toHaveBeenCalledWith(
+      "config_archived",
+      "project_1",
+      expect.objectContaining({ autoKeywordImport: true }),
+    );
+  });
+
   it("throws when an active config already tracks the same domain + location + language", async () => {
     mocks.getConfigByProjectDomainMarket.mockResolvedValue({
       ...archivedConfig,

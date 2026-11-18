@@ -196,6 +196,29 @@ it("caps suggestions at 50", async () => {
   });
 });
 
+it("raises the cap for the auto-import limit", async () => {
+  vi.mocked(YandexWebmasterService.getConnection).mockResolvedValue(
+    yandexConnection,
+  );
+  vi.mocked(YandexWebmasterService.getSearchPerformance).mockResolvedValue(
+    yandexPerformance(
+      Array.from({ length: 120 }, (_, i) => ({
+        query: `q${i}`,
+        impressions: 120 - i,
+        clicks: 1,
+      })),
+    ),
+  );
+
+  const result = await PanelKeywordSuggestions.get({
+    projectId: "p1",
+    limit: 100,
+  });
+
+  expect(result.suggestions).toHaveLength(100);
+  expect(result.suggestions[99]).toMatchObject({ query: "q99" });
+});
+
 it("returns empty suggestions and sources without error when no panel is connected", async () => {
   const result = await PanelKeywordSuggestions.get({ projectId: "p1" });
 

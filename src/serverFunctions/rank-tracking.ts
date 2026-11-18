@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- every rank-tracking server function in one module: config CRUD, keyword ops, and the trend/summary/matrix reads share the project-context middleware and error mapping */
 import { createServerFn } from "@tanstack/react-start";
 import { waitUntil } from "cloudflare:workers";
 import { RankTrackingRepository } from "@/server/features/rank-tracking/repositories/RankTrackingRepository";
@@ -7,6 +8,7 @@ import { PanelKeywordSuggestions } from "@/server/features/rank-tracking/service
 import { getLatestResults } from "@/server/features/rank-tracking/services/rankTrackingResults";
 import { AppError, asAppError } from "@/server/lib/errors";
 import { captureServerEvent } from "@/server/lib/posthog";
+import { syncAutoImportedKeywords } from "@/server/features/rank-tracking/services/autoKeywordImport";
 import { markOnboardingMilestone } from "@/server/email/onboarding-drip";
 import { requireProjectContext } from "@/serverFunctions/middleware";
 import {
@@ -24,6 +26,8 @@ import {
   refreshMetricsSchema,
   getKeywordHistorySchema,
   getConfigTrendSchema,
+  getProjectTrendSchema,
+  getProjectSummarySchema,
   getPositionMatrixSchema,
 } from "@/types/schemas/rank-tracking";
 
@@ -104,7 +108,18 @@ export const createRankTrackingConfig = createServerFn({ method: "POST" })
       serpDepth: data.serpDepth,
       scheduleInterval: data.scheduleInterval,
       scheduleTime: data.scheduleTime,
+      autoKeywordImport: data.autoKeywordImport,
     });
+
+    // A tracker created with auto-import populates from the panels right
+    // away, so the auto-check below already covers real keywords.
+    if (data.autoKeywordImport) {
+      try {
+        await syncAutoImportedKeywords([result]);
+      } catch (err) {
+        logAutoActionFailure("auto-import", err);
+      }
+    }
 
     // Re-adding an archived domain keeps its keywords, and the keyword step
     // then adds nothing new — so this is the only place its check can start.
@@ -144,6 +159,7 @@ export const updateRankTrackingConfig = createServerFn({ method: "POST" })
       serpDepth: data.serpDepth,
       scheduleInterval: data.scheduleInterval,
       scheduleTime: data.scheduleTime,
+      autoKeywordImport: data.autoKeywordImport,
       isActive: data.isActive,
     });
     return { success: true };
@@ -374,4 +390,98 @@ export const getRankPositionMatrix = createServerFn({ method: "POST" })
       data.device,
       data.runLimit,
     );
+  });
+
+export interface RankProjectTrendPoint {
+  day: string;
+  total: number;
+  pages: number;
+  top1: number;
+  top2to5: number;
+  top6to10: number;
+  top11to50: number;
+  notInTop50: number;
+  notChecked: number;
+}
+
+/** A trend point without its day — the shape the summary tiles take. */
+export type RankProjectSummary = Omit<RankProjectTrendPoint, "day">;
+
+/** SQLite aggregates can come back as strings; normalize once. */
+function toCount(value: unknown): number {
+  return Number(value) || 0;
+}
+
+/** Normalize aggregates and derive the two remainder buckets; shared by the
+ * trend's days and the summary so tiles and chart bucket identically. */
+function toSummaryPoint(row: {
+  total: unknown;
+  pages: unknown;
+  top1: unknown;
+  top2to5: unknown;
+  top6to10: unknown;
+  top11to50: unknown;
+  keywordsTotal: unknown;
+}): RankProjectSummary {
+  const total = toCount(row.total);
+  const top1 = toCount(row.top1);
+  const top2to5 = toCount(row.top2to5);
+  const top6to10 = toCount(row.top6to10);
+  const top11to50 = toCount(row.top11to50);
+  return {
+    total,
+    pages: toCount(row.pages),
+    top1,
+    top2to5,
+    top6to10,
+    top11to50,
+    notInTop50: Math.max(0, total - top1 - top2to5 - top6to10 - top11to50),
+    notChecked: Math.max(0, toCount(row.keywordsTotal) - total),
+  };
+}
+
+/** The project-level visibility chart: one row per day, buckets summed across
+ *  the latest full run of every in-scope config (engine/market filters). */
+export const getRankProjectTrend = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(getProjectTrendSchema)
+  .handler(async ({ data, context }): Promise<RankProjectTrendPoint[]> => {
+    // Cross-config days are keyed by the run's calendar date; configId is
+    // already scoping ownership, but projectId re-asserts tenant bounds.
+    const rows = await RankTrackingRepository.getProjectTrend({
+      projectId: context.projectId,
+      device: data.device,
+      sinceDays: data.sinceDays,
+      searchEngine: data.searchEngine,
+      market:
+        data.locationCode !== undefined
+          ? {
+              locationCode: data.locationCode,
+              locationName: data.locationName ?? null,
+            }
+          : undefined,
+    });
+    return rows.map((row) => ({ day: row.day, ...toSummaryPoint(row) }));
+  });
+
+/** Current-state numbers for the overview tiles: every keyword's latest
+ *  known position across the project's active trackers — no history window,
+ *  so the numbers show as soon as any check has run. */
+export const getRankProjectSummary = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(getProjectSummarySchema)
+  .handler(async ({ data, context }): Promise<RankProjectSummary> => {
+    const row = await RankTrackingRepository.getProjectSummary({
+      projectId: context.projectId,
+      device: data.device,
+      searchEngine: data.searchEngine,
+      market:
+        data.locationCode !== undefined
+          ? {
+              locationCode: data.locationCode,
+              locationName: data.locationName ?? null,
+            }
+          : undefined,
+    });
+    return toSummaryPoint(row);
   });
