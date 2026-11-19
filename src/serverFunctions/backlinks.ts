@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 import { BacklinksService } from "@/server/features/backlinks/services/BacklinksService";
+import { WebmasterBacklinksService } from "@/server/features/backlinks/services/WebmasterBacklinksService";
 import { requireProjectContext } from "@/serverFunctions/middleware";
 import {
   backlinksOverviewInputSchema,
@@ -58,4 +60,15 @@ export const getBacklinksTopPages = createServerFn({
   .validator(topPagesPageRequestSchema)
   .handler(({ data, context }) =>
     BacklinksService.profileTopPagesPage(data, context),
+  );
+
+/** The webmaster section of the Backlinks page. Collects from connected
+ *  webmasters when stored data is stale, then returns stored link data plus
+ *  per-source connection state (GSC is reported connected-but-API-limited
+ *  rather than as zero links). */
+export const getWebmasterBacklinks = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(z.object({ projectId: z.string().min(1) }))
+  .handler(async ({ context }) =>
+    WebmasterBacklinksService.getBacklinks({ projectId: context.projectId }),
   );

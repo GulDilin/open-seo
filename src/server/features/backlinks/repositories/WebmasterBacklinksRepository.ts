@@ -1,0 +1,192 @@
+import { and, desc, eq, sql } from "drizzle-orm";
+import { db } from "@/db";
+import { webmasterBacklinkSamples, webmasterBacklinkSnapshots } from "@/db/schema";
+
+export type WebmasterBacklinkSource = "yandex_webmaster";
+
+/** Upsert one dated count per history point. Re-collecting the same date
+ *  refreshes the count and bumps capturedAt (the staleness marker). */
+async function saveSnapshots(
+  rows: Array<{
+    projectId: string;
+    source: WebmasterBacklinkSource;
+    date: string;
+    linksTotalCount: number;
+    capturedAt: string;
+  }>,
+): Promise<void> {
+  for (const row of rows) {
+    await db
+      .insert(webmasterBacklinkSnapshots)
+      .values({ id: crypto.randomUUID(), ...row })
+      .onConflictDoUpdate({
+        target: [
+          webmasterBacklinkSnapshots.projectId,
+          webmasterBacklinkSnapshots.source,
+          webmasterBacklinkSnapshots.date,
+        ],
+        set: {
+          linksTotalCount: row.linksTotalCount,
+          capturedAt: row.capturedAt,
+        },
+      });
+  }
+}
+
+/** Upsert sample links. firstSeenAt survives re-observation; lastSeenAt moves
+ *  so stale samples stay identifiable. */
+async function saveSamples(
+  rows: Array<{
+    projectId: string;
+    source: WebmasterBacklinkSource;
+    sourceUrl: string;
+    destinationUrl: string;
+    discoveryDate: string | null;
+    sourceLastAccessDate: string | null;
+    seenAt: string;
+  }>,
+): Promise<void> {
+  for (const row of rows) {
+    await db
+      .insert(webmasterBacklinkSamples)
+      .values({
+        id: crypto.randomUUID(),
+        projectId: row.projectId,
+        source: row.source,
+        sourceUrl: row.sourceUrl,
+        destinationUrl: row.destinationUrl,
+        discoveryDate: row.discoveryDate,
+        sourceLastAccessDate: row.sourceLastAccessDate,
+        firstSeenAt: row.seenAt,
+        lastSeenAt: row.seenAt,
+      })
+      .onConflictDoUpdate({
+        target: [
+          webmasterBacklinkSamples.projectId,
+          webmasterBacklinkSamples.sourceUrl,
+          webmasterBacklinkSamples.destinationUrl,
+        ],
+        set: {
+          discoveryDate: row.discoveryDate,
+          sourceLastAccessDate: row.sourceLastAccessDate,
+          lastSeenAt: row.seenAt,
+        },
+      });
+  }
+}
+
+/** Dated count series (oldest first) for the trend chart. */
+async function listSnapshots(
+  projectId: string,
+  source: WebmasterBacklinkSource,
+): Promise<Array<{ date: string; linksTotalCount: number }>> {
+  const rows = await db
+    .select({ date: webmasterBacklinkSnapshots.date, linksTotalCount: webmasterBacklinkSnapshots.linksTotalCount })
+    .from(webmasterBacklinkSnapshots)
+    .where(
+      and(
+        eq(webmasterBacklinkSnapshots.projectId, projectId),
+        eq(webmasterBacklinkSnapshots.source, source),
+      ),
+    )
+    .orderBy(desc(webmasterBacklinkSnapshots.date))
+    .limit(365);
+  return rows.toReversed();
+}
+
+/** Samples newest-discovery first, capped for the page table. */
+async function listSamples(
+  projectId: string,
+  source: WebmasterBacklinkSource,
+  limit: number,
+): Promise<
+  Array<{
+    sourceUrl: string;
+    destinationUrl: string;
+    discoveryDate: string | null;
+    sourceLastAccessDate: string | null;
+  }>
+> {
+  return db
+    .select({
+      sourceUrl: webmasterBacklinkSamples.sourceUrl,
+      destinationUrl: webmasterBacklinkSamples.destinationUrl,
+      discoveryDate: webmasterBacklinkSamples.discoveryDate,
+      sourceLastAccessDate: webmasterBacklinkSamples.sourceLastAccessDate,
+    })
+    .from(webmasterBacklinkSamples)
+    .where(
+      and(
+        eq(webmasterBacklinkSamples.projectId, projectId),
+        eq(webmasterBacklinkSamples.source, source),
+      ),
+    )
+    // Nulls last in both dialects: desc over "date < null" keeps SQLite's
+    // NULLS-last default and matches Postgres only when expressed explicitly.
+    .orderBy(sql`${webmasterBacklinkSamples.discoveryDate} desc nulls last`)
+    .limit(limit);
+}
+
+async function countSamples(
+  projectId: string,
+  source: WebmasterBacklinkSource,
+): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(webmasterBacklinkSamples)
+    .where(
+      and(
+        eq(webmasterBacklinkSamples.projectId, projectId),
+        eq(webmasterBacklinkSamples.source, source),
+      ),
+    );
+  return row?.count ?? 0;
+}
+
+/** When the last collect wrote anything — null when never collected. */
+async function lastCollectedAt(
+  projectId: string,
+  source: WebmasterBacklinkSource,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ capturedAt: webmasterBacklinkSnapshots.capturedAt })
+    .from(webmasterBacklinkSnapshots)
+    .where(
+      and(
+        eq(webmasterBacklinkSnapshots.projectId, projectId),
+        eq(webmasterBacklinkSnapshots.source, source),
+      ),
+    )
+    .orderBy(desc(webmasterBacklinkSnapshots.capturedAt))
+    .limit(1);
+  return row?.capturedAt ?? null;
+}
+
+/** Latest stored count row (by reported date), or null before first collect. */
+async function latestSnapshot(
+  projectId: string,
+  source: WebmasterBacklinkSource,
+): Promise<SnapshotRow | null> {
+  const [row] = await db
+    .select()
+    .from(webmasterBacklinkSnapshots)
+    .where(
+      and(
+        eq(webmasterBacklinkSnapshots.projectId, projectId),
+        eq(webmasterBacklinkSnapshots.source, source),
+      ),
+    )
+    .orderBy(desc(webmasterBacklinkSnapshots.date))
+    .limit(1);
+  return row ?? null;
+}
+
+export const WebmasterBacklinksRepository = {
+  saveSnapshots,
+  saveSamples,
+  listSnapshots,
+  listSamples,
+  countSamples,
+  lastCollectedAt,
+  latestSnapshot,
+};
