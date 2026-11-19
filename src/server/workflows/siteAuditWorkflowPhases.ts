@@ -444,7 +444,12 @@ async function runScratchpadLinkChecks(
       pageId: row.sourcePageId,
       pageUrl: row.sourceUrl,
       dedupeKey: row.targetUrl,
-      details: { targetUrl: row.targetUrl, targetStatus: row.targetStatus },
+      // Status 0 is the crawl's network-failure marker (timeout/DNS): show
+      // the reason, not a bare zero.
+      details: {
+        targetUrl: row.targetUrl,
+        targetStatus: row.targetStatus === 0 ? "unreachable" : row.targetStatus,
+      },
     })),
     ...orphanPages.map((row) => ({
       issueType: "orphan-page" as const,

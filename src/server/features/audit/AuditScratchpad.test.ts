@@ -97,6 +97,33 @@ describe("broken internal links", () => {
     expect(brokenLinks()).toEqual([]);
   });
 
+  it("reports an unreachable target the crawl could not fetch", () => {
+    addPage("p1", START);
+    // Network failure (timeout/DNS): status 0, fetch_class 'error' — the
+    // link is as broken for users as a 404, so it must be flagged.
+    addPage("p2", "https://site.test/hung", {
+      status: 0,
+      fetchClass: "error",
+    });
+    addPage("p3", "https://site.test/throttled", {
+      status: 429,
+      fetchClass: "rate_limited",
+    });
+    addLinks("p1", START, [
+      "https://site.test/hung",
+      "https://site.test/throttled",
+    ]);
+
+    expect(brokenLinks()).toEqual([
+      {
+        source_page_id: "p1",
+        source_url: START,
+        target_url: "https://site.test/hung",
+        target_status: 0,
+      },
+    ]);
+  });
+
   it("includes legacy per-edge rows from a crawl that predates the JSON layout", () => {
     addPage("p1", START);
     addPage("p2", "https://site.test/two");

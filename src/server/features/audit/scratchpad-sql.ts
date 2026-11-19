@@ -65,13 +65,17 @@ export const FRONTIER_DISCOVER_SQL = `
 `;
 
 /**
- * Every internal link whose target we crawled and saw fail. `json_each`
- * expands a page's target array into one row per edge; the join is on
- * page_mirror's UNIQUE url, so it stays an index seek per link. CROSS JOIN
- * pins that order — left to itself the planner drives page_mirror off
- * `fetch_class` via an automatic index and re-expands the JSON array per
- * candidate, which is quadratic in page count. Takes the issue cap as its
- * only parameter.
+ * Every internal link whose target we crawled and saw fail: an HTTP error
+ * status (4xx/5xx, fetch_class 'ok') or an unreachable target (network
+ * failure/timeout, fetch_class 'error', status 0). Never inferred from
+ * absence. Blocked targets (WAF challenges) and rate-limited targets are
+ * excluded: bot protection or a crawl cooldown is not evidence of a broken
+ * link. `json_each` expands a page's target array into one row per edge;
+ * the join is on page_mirror's UNIQUE url, so it stays an index seek per
+ * link. CROSS JOIN pins that order — left to itself the planner drives
+ * page_mirror off `fetch_class` via an automatic index and re-expands the
+ * JSON array per candidate, which is quadratic in page count. Takes the
+ * issue cap as its only parameter.
  */
 export const BROKEN_LINKS_SQL = `
   SELECT source_page_id, source_url, target_url, target_status FROM (
@@ -79,11 +83,11 @@ export const BROKEN_LINKS_SQL = `
            m.status_code AS target_status
     FROM page_links p, json_each(p.targets_json) AS j
     CROSS JOIN page_mirror m ON m.url = j.value
-    WHERE m.status_code >= 400 AND m.fetch_class = 'ok'
+    WHERE (m.fetch_class = 'error' OR (m.status_code >= 400 AND m.fetch_class = 'ok'))
     UNION ALL
     SELECT l.source_page_id, l.source_url, l.target_url, m.status_code AS target_status
     FROM links l JOIN page_mirror m ON m.url = l.target_url
-    WHERE m.status_code >= 400 AND m.fetch_class = 'ok'
+    WHERE (m.fetch_class = 'error' OR (m.status_code >= 400 AND m.fetch_class = 'ok'))
   )
   ORDER BY source_page_id, target_url
   LIMIT ?
