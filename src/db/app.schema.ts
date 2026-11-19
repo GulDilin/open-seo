@@ -468,6 +468,67 @@ export const backlinkSnapshots = sqliteTable(
   ],
 );
 
+// External-link tracking sourced from connected webmaster tools
+// (Yandex Webmaster today — the Search Console API exposes no links data).
+// One row per (project, source, webmaster-reported date): the dated history
+// series doubles as the snapshot log, so a fresh collect both backfills
+// Yandex's history and appends the current count.
+export const webmasterBacklinkSnapshots = sqliteTable(
+  "webmaster_backlink_snapshots",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    source: text("source", { enum: ["yandex_webmaster"] }).notNull(),
+    // The date the webmaster reported the count FOR (UTC day).
+    date: text("date").notNull(),
+    linksTotalCount: integer("links_total_count").notNull(),
+    // When our collect last wrote this row — drives collect staleness.
+    capturedAt: text("captured_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("webmaster_backlink_snapshots_unique").on(
+      table.projectId,
+      table.source,
+      table.date,
+    ),
+  ],
+);
+
+// Sample external links a webmaster API exposes (source page → target page).
+// Yandex's samples carry no anchor text; kept as-is. Rows persist across
+// collects (firstSeenAt/lastSeenAt bracket observation) — disappearing from
+// Yandex's sample pool does not mean a link was lost, so no "lost" state.
+export const webmasterBacklinkSamples = sqliteTable(
+  "webmaster_backlink_samples",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    source: text("source", { enum: ["yandex_webmaster"] }).notNull(),
+    sourceUrl: text("source_url").notNull(),
+    destinationUrl: text("destination_url").notNull(),
+    // Nullable: the API may omit them for a given link.
+    discoveryDate: text("discovery_date"),
+    sourceLastAccessDate: text("source_last_access_date"),
+    firstSeenAt: text("first_seen_at").notNull(),
+    lastSeenAt: text("last_seen_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("webmaster_backlink_samples_unique").on(
+      table.projectId,
+      table.sourceUrl,
+      table.destinationUrl,
+    ),
+    index("webmaster_backlink_samples_discovery_idx").on(
+      table.projectId,
+      table.discoveryDate,
+    ),
+  ],
+);
+
 // Personal checklist preferences; completion remains derived from product state.
 export const dashboardStepDismissals = sqliteTable(
   "dashboard_step_dismissals",
