@@ -31,19 +31,21 @@ const hostInfoResponseSchema = z.looseObject({
   host_display_name: z.string().optional(),
 });
 
+// Yandex serializes "value not defined" both as an absent key and as JSON
+// null (live captures show "AVG_CLICK_POSITION": null for zero-click queries)
+// — accept both shapes everywhere a value may be undefined.
 const summaryResponseSchema = z.looseObject({
-  sqi: z.number().optional(),
-  excluded_pages_count: z.number().optional(),
-  searchable_pages_count: z.number().optional(),
-  site_problems: z.record(z.string(), z.number()).optional(),
+  sqi: z.number().nullish(),
+  excluded_pages_count: z.number().nullish(),
+  searchable_pages_count: z.number().nullish(),
+  site_problems: z.record(z.string(), z.number().nullish()).optional(),
 });
 
-// Yandex omits an indicator when its value is undefined for a query.
 const queryIndicatorsSchema = z.looseObject({
-  TOTAL_SHOWS: z.number().optional(),
-  TOTAL_CLICKS: z.number().optional(),
-  AVG_SHOW_POSITION: z.number().optional(),
-  AVG_CLICK_POSITION: z.number().optional(),
+  TOTAL_SHOWS: z.number().nullish(),
+  TOTAL_CLICKS: z.number().nullish(),
+  AVG_SHOW_POSITION: z.number().nullish(),
+  AVG_CLICK_POSITION: z.number().nullish(),
 });
 
 const popularQueriesResponseSchema = z.object({
@@ -210,7 +212,24 @@ export function createYandexWebmasterClient(opts: {
         body,
       );
     }
-    return parse(await response.json());
+    let data: unknown;
+    try {
+      data = await response.json();
+    } catch {
+      throw new YandexWebmasterApiError(
+        response.status,
+        `Yandex Webmaster returned a non-JSON response for ${new URL(url).pathname}.`,
+      );
+    }
+    try {
+      return parse(data);
+    } catch (error) {
+      // Shape drift must name the endpoint, not surface as a raw Zod dump.
+      throw new YandexWebmasterApiError(
+        response.status,
+        `Yandex Webmaster returned an unexpected response shape for ${new URL(url).pathname}: ${error instanceof Error ? error.message.slice(0, 300) : String(error)}`,
+      );
+    }
   }
 
   async function getUid(): Promise<number> {
