@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { QueryError } from "@/client/components/QueryState";
+import { SafeExternalLink } from "@/client/components/SafeExternalLink";
 import { TablePagination } from "@/client/components/table/TablePagination";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
@@ -335,15 +336,11 @@ export function IndexStatusPage({
                 {data.rows.map((row) => (
                   <TableRow key={row.url}>
                     <TableCell className="max-w-96">
-                      <a
-                        href={row.url}
-                        target="_blank"
-                        rel="noreferrer"
+                      <SafeExternalLink
+                        url={row.url}
+                        label={row.url}
                         className="block truncate font-medium hover:underline"
-                        title={row.url}
-                      >
-                        {row.url}
-                      </a>
+                      />
                     </TableCell>
                     <TableCell className="align-top">
                       <EngineStatusCell

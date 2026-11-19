@@ -62,10 +62,11 @@ function describeYandexExclusion(event: YandexSearchEventSample): string {
 
 /** Normalize a page URL for cross-engine matching: lowercase host, drop
  *  default port, strip fragment and non-root trailing slash. Returns null for
- *  non-URL garbage, which collect skips. */
+ *  non-URL garbage and non-http(s) schemes, which collect skips. */
 function normalizePageUrl(raw: string): string | null {
   try {
     const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
     url.hash = "";
     url.hostname = url.hostname.toLowerCase();
     if (

@@ -375,14 +375,18 @@ describe("IndexStatusService.getIndexStatus", () => {
 
   it("adds audited pages to the universe with honest no-data columns", async () => {
     connectBoth();
-    state.auditPages = ["https://site.example/audit-only"];
-
-    const auditRow = rowIndex(await read({})).get(
+    state.auditPages = [
       "https://site.example/audit-only",
-    );
+      "javascript:alert(1)",
+    ];
+
+    const rows = rowIndex(await read({}));
+    const auditRow = rows.get("https://site.example/audit-only");
     expect(auditRow).toBeDefined();
     expect(auditRow?.sources).toContain("audit_crawl");
     expect(auditRow?.google).toBeNull();
     expect(auditRow?.yandex).toBeNull();
+    // Non-http(s) schemes never enter the universe.
+    expect(rows.get("javascript:alert(1)")).toBeUndefined();
   });
 });
