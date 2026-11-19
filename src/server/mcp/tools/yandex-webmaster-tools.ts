@@ -181,18 +181,21 @@ export const getYandexSearchPerformanceTool = {
               `problems — fatal: ${result.summary.problems.fatal ?? 0}, critical: ${result.summary.problems.critical ?? 0}, possible: ${result.summary.problems.possibleProblem ?? 0}, recommendations: ${result.summary.problems.recommendation ?? 0}`,
             ]
           : [
-              "Site summary unavailable (Yandex has not loaded this site's data yet).",
+              result.summaryError
+                ? `Site summary unavailable: ${result.summaryError}`
+                : "Site summary unavailable (Yandex has not loaded this site's data yet).",
             ];
+        const tableText =
+          rows.length > 0
+            ? formatMcpTable(rows, QUERY_COLUMNS)
+            : "No query data for this window.";
         const text =
-          `${header}\n\n${formatMcpTable(rows, QUERY_COLUMNS)}\n\n` +
+          `${header}\n\n${tableText}\n\n` +
           `Summary\n${summaryLines.map((line) => `- ${line}`).join("\n")}\n\n` +
           `Limitations\n${YANDEX_LIMITATIONS.map((line) => `- ${line}`).join("\n")}`;
 
         return mcpResponse({
-          text:
-            rows.length > 0
-              ? text
-              : `${header}\nNo query data for this window.`,
+          text,
           meta,
           structuredContent: {
             ok: true,
@@ -207,6 +210,7 @@ export const getYandexSearchPerformanceTool = {
             summary: result.summary
               ? { ...result.summary, indexingStatus: result.indexingStatus }
               : undefined,
+            summaryError: result.summaryError ?? undefined,
             limitations: YANDEX_LIMITATIONS,
           },
         });

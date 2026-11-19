@@ -108,6 +108,9 @@ export const yandexWebmasterSchema = z.looseObject({
         .optional(),
     })
     .optional(),
+  // Present when the site summary call failed — the reason queries may be
+  // shown without a summary.
+  summaryError: z.string().optional(),
   limitations: z.array(z.string()).optional(),
   meta: mcpMetaOutputSchema.optional(),
 });
