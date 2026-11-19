@@ -5,6 +5,7 @@ import {
   domainKeywordSuggestionsSchema,
   domainKeywordsPageRequestSchema,
   domainPagesPageRequestSchema,
+  projectDomainRatingInputSchema,
 } from "@/types/schemas/domain";
 import { DomainService } from "@/server/features/domain/services/DomainService";
 import { resolveLabsMarket } from "@/shared/keyword-locations";
@@ -33,6 +34,17 @@ export const getDomainOverview = createServerFn({ method: "POST" })
 
     return DomainService.getOverview(input, context);
   });
+
+// The project website's domain rating, independent of the searched domain.
+export const getProjectDomainRating = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(projectDomainRatingInputSchema)
+  .handler(({ context }) =>
+    DomainService.getProjectDomainRating(
+      { projectId: context.projectId, domain: context.project.domain },
+      context,
+    ),
+  );
 
 export const getDomainKeywordSuggestions = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)

@@ -50,6 +50,10 @@ export const domainOverviewSchema = z.object({
   languageCode: z.string().min(2).max(8).optional(),
 });
 
+export const projectDomainRatingInputSchema = z.object({
+  projectId: z.string().uuid(),
+});
+
 /* ------------------------------------------------------------------ */
 /*  URL search params schema for /p/$projectId/domain                  */
 /* ------------------------------------------------------------------ */
