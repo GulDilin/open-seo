@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- one wire adapter per vendor: every Yandex Webmaster v4 endpoint normalizes to camelCase here so vendor names live only in this file */
 import { z } from "zod";
 import { getYandexWebmasterAccessToken } from "@/server/features/yandex/yandexOAuth";
 import {
@@ -98,6 +99,41 @@ const errorResponseSchema = z.looseObject({
   error_message: z.string().optional(),
 });
 
+// /search-urls/in-search/samples — example pages currently participating in
+// search. `count` is Yandex's total sample pool, which can far exceed what any
+// client paginates through.
+const inSearchSamplesResponseSchema = z.object({
+  count: z.coerce.number(),
+  samples: z.array(
+    z.object({
+      url: z.string(),
+      // Yandex datetimes ("2016-01-01T00:00:00,000+0300"); only the day is
+      // meaningful here.
+      last_access: z.string().nullish(),
+      title: z.string().nullish(),
+    }),
+  ),
+});
+
+// /search-urls/events/samples — example pages that recently appeared in or
+// were removed from search, with per-page exclusion reasons.
+const searchEventSamplesResponseSchema = z.object({
+  count: z.coerce.number(),
+  samples: z.array(
+    z.looseObject({
+      url: z.string(),
+      title: z.string().nullish(),
+      event_date: z.string().nullish(),
+      last_access: z.string().nullish(),
+      event: z.enum(["APPEARED_IN_SEARCH", "REMOVED_FROM_SEARCH"]),
+      // Present only on REMOVED_FROM_SEARCH events.
+      excluded_url_status: z.string().nullish(),
+      bad_http_status: z.number().nullish(),
+      target_url: z.string().nullish(),
+    }),
+  ),
+});
+
 // ---------------------------------------------------------------------------
 // Normalized internal types (what services and MCP tools consume).
 // ---------------------------------------------------------------------------
@@ -141,16 +177,33 @@ type YandexPopularQueries = {
   totalCount: number;
 };
 
-export type YandexLinksHistoryPoint = {
+type YandexLinksHistoryPoint = {
   date: string;
   linksTotalCount: number | null;
 };
 
-export type YandexExternalLinkSample = {
+type YandexExternalLinkSample = {
   sourceUrl: string;
   destinationUrl: string;
   discoveryDate: string | null;
   sourceLastAccessDate: string | null;
+};
+
+type YandexInSearchSample = {
+  url: string;
+  lastAccess: string | null;
+  title: string | null;
+};
+
+export type YandexSearchEventSample = {
+  url: string;
+  event: "APPEARED_IN_SEARCH" | "REMOVED_FROM_SEARCH";
+  excludedUrlStatus: string | null;
+  badHttpStatus: number | null;
+  targetUrl: string | null;
+  eventDate: string | null;
+  lastAccess: string | null;
+  title: string | null;
 };
 
 export type YandexQueryOrderBy = "TOTAL_SHOWS" | "TOTAL_CLICKS";
@@ -414,6 +467,61 @@ export function createYandexWebmasterClient(opts: {
           discoveryDate: link.discovery_date?.slice(0, 10) ?? null,
           sourceLastAccessDate:
             link.source_last_access_date?.slice(0, 10) ?? null,
+        })),
+      };
+    },
+
+    /** /search-urls/in-search/samples — one bounded page of example pages
+     *  currently participating in search. `count` is Yandex's total sample
+     *  pool. */
+    async getInSearchSamples(
+      hostId: string,
+      input: { limit: number; offset: number },
+    ): Promise<{ count: number; samples: YandexInSearchSample[] }> {
+      const params = new URLSearchParams({
+        limit: String(input.limit),
+        offset: String(input.offset),
+      });
+      const data = await request(
+        `${API_BASE}/user/${await resolveUid()}/hosts/${encodeURIComponent(hostId)}/search-urls/in-search/samples?${params}`,
+        (d) => inSearchSamplesResponseSchema.parse(d),
+      );
+      return {
+        count: data.count,
+        samples: data.samples.map((sample) => ({
+          url: sample.url,
+          lastAccess: sample.last_access?.slice(0, 10) ?? null,
+          title: sample.title ?? null,
+        })),
+      };
+    },
+
+    /** /search-urls/events/samples — one bounded page of example pages that
+     *  recently appeared in or were removed from search. Removed events carry
+     *  the per-page exclusion reason. */
+    async getSearchEventSamples(
+      hostId: string,
+      input: { limit: number; offset: number },
+    ): Promise<{ count: number; samples: YandexSearchEventSample[] }> {
+      const params = new URLSearchParams({
+        limit: String(input.limit),
+        offset: String(input.offset),
+      });
+      const data = await request(
+        `${API_BASE}/user/${await resolveUid()}/hosts/${encodeURIComponent(hostId)}/search-urls/events/samples?${params}`,
+        (d) => searchEventSamplesResponseSchema.parse(d),
+      );
+      return {
+        count: data.count,
+        samples: data.samples.map((sample) => ({
+          url: sample.url,
+          event: sample.event,
+          excludedUrlStatus: sample.excluded_url_status ?? null,
+          badHttpStatus: sample.bad_http_status ?? null,
+          targetUrl: sample.target_url ?? null,
+          eventDate: sample.event_date?.slice(0, 10) ?? null,
+          lastAccess: sample.last_access?.slice(0, 10) ?? null,
+          title: sample.title ?? null,
         })),
       };
     },
