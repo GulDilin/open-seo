@@ -309,6 +309,13 @@
       "when": 1795110830302,
       "tag": "0043_classy_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795112962615,
+      "tag": "0044_motionless_absorbing_man",
+      "breakpoints": true
     }
   ]
 }
