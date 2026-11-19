@@ -4,6 +4,7 @@ import {
   useSeoProviderSetup,
 } from "@/client/components/ProviderRequiredBadge";
 import { BacklinksPage } from "@/client/features/backlinks/BacklinksPage";
+import { WebmasterBacklinksSection } from "@/client/features/backlinks/WebmasterBacklinksSection";
 import {
   DEFAULT_BACKLINKS_PAGE_SIZE,
   backlinksSearchSchema,
@@ -30,19 +31,24 @@ function BacklinksRoute() {
     includeSpam,
   } = Route.useSearch();
   const scope = rawScope ?? defaultScopeForInput(target);
-  // The whole page runs on DataForSEO; without its key every mounted query
-  // would fail server-side. Render the badge instead of the page.
+  // Webmaster-sourced link data is free first-party data — it renders with or
+  // without DataForSEO.
+  const webmasterSection = <WebmasterBacklinksSection projectId={projectId} />;
+  // The DataForSEO-powered research below needs its key; without it every
+  // mounted query would fail server-side. Render the badge instead of the page.
   const setup = useSeoProviderSetup();
   if (setup.data && !setup.data.dataforseo)
     return (
       <div className="space-y-3">
         <DataForSeoRequiredBadge />
+        {webmasterSection}
       </div>
     );
 
   return (
     <div className="space-y-3">
       <DataForSeoRequiredBadge />
+      {webmasterSection}
       <BacklinksPage
         projectId={projectId}
         navigate={navigate}
