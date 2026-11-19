@@ -84,16 +84,19 @@ async function collectFromYandex(input: {
 
   const history = await client.getExternalLinksHistory(input.hostId);
   await WebmasterBacklinksRepository.saveSnapshots(
-    history
-      .filter((point) => point.linksTotalCount !== null)
-      .map((point) => ({
-        projectId: input.projectId,
-        source: "yandex_webmaster" as const,
-        // The filter above proved this non-null.
-        linksTotalCount: point.linksTotalCount as number,
-        date: point.date,
-        capturedAt,
-      })),
+    history.flatMap((point) =>
+      point.linksTotalCount === null
+        ? []
+        : [
+            {
+              projectId: input.projectId,
+              source: "yandex_webmaster" as const,
+              linksTotalCount: point.linksTotalCount,
+              date: point.date,
+              capturedAt,
+            },
+          ],
+    ),
   );
 
   let offset = 0;

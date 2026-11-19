@@ -1,4 +1,5 @@
 import { and, desc, eq, sql } from "drizzle-orm";
+import { reverse } from "remeda";
 import { db } from "@/db";
 import { webmasterBacklinkSamples, webmasterBacklinkSnapshots } from "@/db/schema";
 
@@ -91,7 +92,7 @@ async function listSnapshots(
     )
     .orderBy(desc(webmasterBacklinkSnapshots.date))
     .limit(365);
-  return rows.toReversed();
+  return reverse(rows);
 }
 
 /** Samples newest-discovery first, capped for the page table. */
@@ -162,25 +163,6 @@ async function lastCollectedAt(
   return row?.capturedAt ?? null;
 }
 
-/** Latest stored count row (by reported date), or null before first collect. */
-async function latestSnapshot(
-  projectId: string,
-  source: WebmasterBacklinkSource,
-): Promise<SnapshotRow | null> {
-  const [row] = await db
-    .select()
-    .from(webmasterBacklinkSnapshots)
-    .where(
-      and(
-        eq(webmasterBacklinkSnapshots.projectId, projectId),
-        eq(webmasterBacklinkSnapshots.source, source),
-      ),
-    )
-    .orderBy(desc(webmasterBacklinkSnapshots.date))
-    .limit(1);
-  return row ?? null;
-}
-
 export const WebmasterBacklinksRepository = {
   saveSnapshots,
   saveSamples,
@@ -188,5 +170,4 @@ export const WebmasterBacklinksRepository = {
   listSamples,
   countSamples,
   lastCollectedAt,
-  latestSnapshot,
 };

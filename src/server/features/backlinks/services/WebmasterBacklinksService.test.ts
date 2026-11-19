@@ -11,9 +11,21 @@ import { WebmasterBacklinksService } from "./WebmasterBacklinksService";
 // The repository under the service runs against real SQLite; only the Yandex
 // client and the connection repositories are module-mocked.
 const state = vi.hoisted(() => {
+  type HistoryPoint = { date: string; linksTotalCount: number | null };
+  type SampleLink = {
+    sourceUrl: string;
+    destinationUrl: string;
+    discoveryDate: string | null;
+    sourceLastAccessDate: string | null;
+  };
   const clientMocks = {
-    getExternalLinksHistory: vi.fn(),
-    getExternalLinksSamples: vi.fn(),
+    getExternalLinksHistory: vi.fn<() => Promise<HistoryPoint[]>>(),
+    getExternalLinksSamples: vi.fn<
+      (
+        hostId: string,
+        input: { limit: number; offset: number },
+      ) => Promise<{ count: number; links: SampleLink[] }>
+    >(),
   };
   return {
     database: null as DatabaseSync | null,
