@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { parseYandexDocs } from "./xml";
+import { parseYandexDocs, parseYandexError } from "./xml";
 import { yandexProvider } from "./adapter";
 import { wordstatProvider } from "./wordstat";
 import type { SerpRankCheck } from "@/server/lib/seo-providers/types";
@@ -14,24 +14,24 @@ vi.mock("./client", () => ({
   wordstatTopRequests: mocks.wordstatTopRequests,
 }));
 
-// Assembled from the documented YaXML result shape (search > results >
-// grouping > group > doc); AT INTEGRATION: re-record from a live key.
+// Live v2 shape (search > results > grouping > group > doc): doc opening tags
+// carry attributes, and <domain> may be absent — the host is derived from the
+// url then. Bare <doc> tags parse the same way.
 const RAW_XML = `<?xml version="1.0" encoding="utf-8"?>
 <yandexsearch version="1.0">
  <response>
   <results>
    <grouping>
     <group>
-     <doc>
+     <doc id="ZD1A2B3C">
       <url>https://ozon.ru/category/sneaky/</url>
       <domain>ozon.ru</domain>
       <title>Кроссовки — купить на Ozon</title>
      </doc>
     </group>
     <group>
-     <doc>
+     <doc id="ZD4D5E6F">
       <url>https://blog.wildberries.example.com/sneaky-guide</url>
-      <domain>blog.wildberries.example.com</domain>
       <title>Как выбрать кроссовки</title>
      </doc>
     </group>
@@ -68,6 +68,22 @@ describe("parseYandexDocs", () => {
       title: "Кроссовки — купить на Ozon",
     });
     expect(parsedDocs[2].title).toContain('"для бега"');
+  });
+
+  it("derives the domain from the url when the <domain> tag is absent", () => {
+    expect(parsedDocs[1].domain).toBe("blog.wildberries.example.com");
+  });
+});
+
+describe("parseYandexError", () => {
+  it("extracts the code and message from an in-response error element", () => {
+    expect(
+      parseYandexError(`<response><error code="33">Search limit exceeded</error></response>`),
+    ).toEqual({ code: "33", message: "Search limit exceeded" });
+  });
+
+  it("returns null when the response carries no error", () => {
+    expect(parseYandexError(RAW_XML)).toBeNull();
   });
 });
 

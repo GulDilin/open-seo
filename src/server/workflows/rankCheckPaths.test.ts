@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkflowStep } from "cloudflare:workers";
 import type { RankCheckTaskInput } from "@/server/lib/dataforseo";
-import { runLiveCheck } from "./rankCheckPaths";
+import { runLiveCheck, runProviderCheck } from "./rankCheckPaths";
 import { retryRankChecks } from "./rankCheckRetries";
+import { yandexProvider } from "@/server/lib/seo-providers/yandex/adapter";
+import { AppError } from "@/server/lib/errors";
 
 const mocks = vi.hoisted(() => ({
   getSnapshotsForRun: vi.fn(),
@@ -15,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   fetchRankCheckTaskResult: vi.fn(),
   rankCheckBatch: vi.fn(),
   rankCheckTaskPost: vi.fn(),
+  yandexWebSearch: vi.fn(),
 }));
 
 vi.mock(
@@ -24,6 +27,9 @@ vi.mock(
 vi.mock("@/server/lib/dataforseo", () => ({
   fetchRankCheckTaskResult: mocks.fetchRankCheckTaskResult,
   MAX_TASKS_PER_POST: 100,
+}));
+vi.mock("@/server/lib/seo-providers/yandex/client", () => ({
+  yandexWebSearch: mocks.yandexWebSearch,
 }));
 vi.mock("@/server/workflows/pgStep", () => ({
   pgStep: (
@@ -106,6 +112,76 @@ describe("runLiveCheck", () => {
     );
 
     expect(mocks.rankCheckBatch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("runProviderCheck (yandex)", () => {
+  beforeEach(() => {
+    mocks.yandexWebSearch.mockResolvedValue([
+      {
+        url: "https://target.example/page",
+        domain: "target.example",
+        title: "Target",
+      },
+      {
+        url: "https://other.example/",
+        domain: "other.example",
+        title: "Other",
+      },
+    ]);
+  });
+
+  it("persists yandex positions as snapshots, one row per device", async () => {
+    await runProviderCheck(
+      step,
+      {
+        ...checkContext(["kw_1"]),
+        devices: "both",
+        domain: "target.example",
+        locationCode: 643,
+        languageCode: "ru",
+      },
+      yandexProvider,
+      "yandex",
+    );
+
+    expect(mocks.yandexWebSearch).toHaveBeenCalledWith({
+      keyword: "keyword kw_1",
+      region: undefined,
+    });
+    expect(mocks.insertSnapshots).toHaveBeenCalledWith([
+      expect.objectContaining({
+        runId: "run_1",
+        trackingKeywordId: "kw_1",
+        position: 1,
+        device: "desktop",
+      }),
+      expect.objectContaining({
+        runId: "run_1",
+        trackingKeywordId: "kw_1",
+        position: 1,
+        device: "mobile",
+      }),
+    ]);
+  });
+
+  it("records a provider failure and writes no snapshot for the keyword", async () => {
+    mocks.yandexWebSearch.mockRejectedValue(
+      new AppError("UPSTREAM_UNAVAILABLE", "Yandex Search API error 33"),
+    );
+
+    await runProviderCheck(
+      step,
+      checkContext(["kw_1"]),
+      yandexProvider,
+      "yandex",
+    );
+
+    expect(mocks.setRunErrorIfEmpty).toHaveBeenCalledWith(
+      "run_1",
+      "UPSTREAM_UNAVAILABLE",
+    );
+    expect(mocks.insertSnapshots).not.toHaveBeenCalled();
   });
 });
 

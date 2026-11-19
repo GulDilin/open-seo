@@ -1,12 +1,13 @@
 /**
  * Lenient extraction of organic <doc> blocks from Yandex Search API XML
- * (the old YaXML shape: response > results > grouping > group > doc with
- * url, domain, title, passage children). Workers has no DOMParser, and the
+ * (the YaXML shape: response > results > grouping > group > doc with url,
+ * domain, title, passage children). Workers has no DOMParser, and the
  * extraction surface is three known tags per doc — a scoped regex parse is
  * smaller and more portable than an XML machinery dependency.
  *
- * AT INTEGRATION: record a live rawData fixture with a real key and diff
- * against this parser's output (task 004/T001).
+ * The live v2 API emits doc opening tags WITH attributes (`<doc id="...">`,
+ * per Yandex's own searchapi MCP server which line-scans for `'<doc '`), so
+ * the pattern must not assume a bare `<doc>`.
  */
 
 export interface YandexDoc {
@@ -15,7 +16,7 @@ export interface YandexDoc {
   title: string;
 }
 
-const DOC_PATTERN = /<doc>([\s\S]*?)<\/doc>/g;
+const DOC_PATTERN = /<doc\b[^>]*>([\s\S]*?)<\/doc>/g;
 const TAG_PATTERNS = {
   url: /<url>([\s\S]*?)<\/url>/,
   domain: /<domain>([\s\S]*?)<\/domain>/,
@@ -52,9 +53,38 @@ export function parseYandexDocs(xml: string): YandexDoc[] {
     if (!url) continue;
     docs.push({
       url,
-      domain: firstTag(block, "domain").toLowerCase(),
+      // <domain> is optional in live responses — derive it from the url so a
+      // missing tag never reads as "cannot match the target domain".
+      domain: firstTag(block, "domain").toLowerCase() || hostOf(url),
       title: firstTag(block, "title"),
     });
   }
   return docs;
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+export interface YandexXmlError {
+  code: string;
+  message: string;
+}
+
+const ERROR_PATTERN = /<error\b([^>]*)>([\s\S]*?)<\/error>/;
+
+/**
+ * Yandex reports application errors inside a 200 response's XML (an <error>
+ * element under <response>); there is no HTTP status for them. Code 15 means
+ * "nothing found" and is not a failure.
+ */
+export function parseYandexError(xml: string): YandexXmlError | null {
+  const match = ERROR_PATTERN.exec(xml);
+  if (!match) return null;
+  const code = /code="([^"]*)"/.exec(match[1])?.[1] ?? "";
+  return { code, message: decodeXmlEntities(match[2].trim()) };
 }

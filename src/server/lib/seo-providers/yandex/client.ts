@@ -1,13 +1,19 @@
 import { z } from "zod";
 import { AppError } from "@/server/lib/errors";
 import { getRequiredEnvValue } from "@/server/lib/runtime-env";
-import { parseYandexDocs, type YandexDoc } from "./xml";
+import { parseYandexDocs, parseYandexError, type YandexDoc } from "./xml";
+
+/** Yandex's "search returned nothing" error code — an empty result, not a failure. */
+const NOTHING_FOUND_ERROR_CODE = "15";
 
 /**
  * Yandex Search API client (searchapi.api.cloud.yandex.net).
  * Auth: service-account API key + folder id on every call.
  * Facts pinned from the official API reference (October 2026):
  * - web search: POST /v2/web/search → { rawData: base64 XML }
+ * - the XML's doc opening tags carry attributes (`<doc id="...">`)
+ * - application errors ride inside the 200 XML as <error code="...">;
+ *   code 15 = "nothing found" (not an error)
  * - wordstat top requests: POST /v2/wordstat/topRequests
  *   → { totalCount, results: [{ phrase, count }] } (counts are int64 strings)
  *
@@ -137,6 +143,15 @@ export async function yandexWebSearch(input: {
   const xml = new TextDecoder().decode(
     Uint8Array.from(atob(parsed.rawData), (byte) => byte.charCodeAt(0)),
   );
+  // Without this check an in-XML error parses to zero docs and every keyword
+  // reads as "not ranking" — the run looks successful with no data.
+  const error = parseYandexError(xml);
+  if (error && error.code !== NOTHING_FOUND_ERROR_CODE) {
+    throw new AppError(
+      "UPSTREAM_UNAVAILABLE",
+      `Yandex Search API error ${error.code}: ${error.message}`,
+    );
+  }
   return parseYandexDocs(xml);
 }
 
