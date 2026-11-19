@@ -328,3 +328,87 @@ describe("yandexWebmasterClient", () => {
     });
   });
 });
+
+describe("yandexWebmasterClient external links", () => {
+  beforeEach(() => {
+    mocks.getAccessToken.mockResolvedValue("yandex_tok_123");
+    vi.stubGlobal("fetch", mocks.fetch);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("normalizes link history, cutting datetime dates to days and coercing string values", async () => {
+    // The docs type `value` as string but serialize it as a number in their
+    // own example; accept both. Dates arrive as Yandex datetimes.
+    mocks.fetch
+      .mockResolvedValueOnce(jsonResponse({ user_id: 111 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          indicators: {
+            LINKS_TOTAL_COUNT: [
+              { date: "2019-01-01T00:00:00,000+0300", value: 1 },
+              { date: "2019-02-01T00:00:00,000+0300", value: "15" },
+            ],
+          },
+        }),
+      );
+    const points = await createYandexWebmasterClient({
+      userId: "u1",
+    }).getExternalLinksHistory("https:ya.ru:80");
+
+    expect(points).toEqual([
+      { date: "2019-01-01", linksTotalCount: 1 },
+      { date: "2019-02-01", linksTotalCount: 15 },
+    ]);
+    const [url] = mocks.fetch.mock.calls[1];
+    expect(urlOf(url)).toBe(
+      "https://api.webmaster.yandex.net/v4/user/111/hosts/https%3Aya.ru%3A80/links/external/history?indicator=LINKS_TOTAL_COUNT",
+    );
+  });
+
+  it("normalizes external link samples with paging params and null-tolerant dates", async () => {
+    mocks.fetch
+      .mockResolvedValueOnce(jsonResponse({ user_id: 111 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          count: 12,
+          links: [
+            {
+              source_url: "https://other-example.com/page/",
+              destination_url: "https://example.com/page1/",
+              discovery_date: "2019-01-01T00:00:00,000+0300",
+              source_last_access_date: "2019-01-05",
+            },
+            {
+              source_url: "https://no-dates.example.com/",
+              destination_url: "https://example.com/",
+            },
+          ],
+        }),
+      );
+    const result = await createYandexWebmasterClient({
+      userId: "u1",
+    }).getExternalLinksSamples("https:ya.ru:80", { limit: 100, offset: 200 });
+
+    expect(result.count).toBe(12);
+    expect(result.links).toEqual([
+      {
+        sourceUrl: "https://other-example.com/page/",
+        destinationUrl: "https://example.com/page1/",
+        discoveryDate: "2019-01-01",
+        sourceLastAccessDate: "2019-01-05",
+      },
+      {
+        sourceUrl: "https://no-dates.example.com/",
+        destinationUrl: "https://example.com/",
+        discoveryDate: null,
+        sourceLastAccessDate: null,
+      },
+    ]);
+    const [url] = mocks.fetch.mock.calls[1];
+    expect(urlOf(url)).toBe(
+      "https://api.webmaster.yandex.net/v4/user/111/hosts/https%3Aya.ru%3A80/links/external/samples?limit=100&offset=200",
+    );
+  });
+});

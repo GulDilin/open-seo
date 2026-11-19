@@ -65,6 +65,34 @@ const popularQueriesResponseSchema = z.object({
   count: z.coerce.number(),
 });
 
+// /links/external/history — the docs type `value` as string but their own JSON
+// example serializes 1 as a number; coerce both. Yandex datetimes use the
+// "2019-01-01T00:00:00,000+0300" shape; only the day is meaningful here.
+const linksHistoryResponseSchema = z.object({
+  indicators: z.object({
+    LINKS_TOTAL_COUNT: z.array(
+      z.object({
+        date: z.string(),
+        value: z.coerce.number().nullish(),
+      }),
+    ),
+  }),
+});
+
+// /links/external/samples — popular external link examples Yandex shows in the
+// UI. Dates may arrive as plain days or full datetimes; both are cut to the day.
+const externalLinksSamplesResponseSchema = z.object({
+  count: z.coerce.number(),
+  links: z.array(
+    z.object({
+      source_url: z.string(),
+      destination_url: z.string(),
+      discovery_date: z.string().nullish(),
+      source_last_access_date: z.string().nullish(),
+    }),
+  ),
+});
+
 const errorResponseSchema = z.looseObject({
   error_code: z.string().optional(),
   error_message: z.string().optional(),
@@ -111,6 +139,18 @@ type YandexPopularQueries = {
   reportedDateFrom: string;
   reportedDateTo: string;
   totalCount: number;
+};
+
+export type YandexLinksHistoryPoint = {
+  date: string;
+  linksTotalCount: number | null;
+};
+
+export type YandexExternalLinkSample = {
+  sourceUrl: string;
+  destinationUrl: string;
+  discoveryDate: string | null;
+  sourceLastAccessDate: string | null;
 };
 
 export type YandexQueryOrderBy = "TOTAL_SHOWS" | "TOTAL_CLICKS";
@@ -327,6 +367,54 @@ export function createYandexWebmasterClient(opts: {
         reportedDateFrom: data.date_from.slice(0, 10),
         reportedDateTo: data.date_to.slice(0, 10),
         totalCount: data.count,
+      };
+    },
+
+    /** /links/external/history — dated total external link counts for the
+     *  site, as Yandex returns them. */
+    async getExternalLinksHistory(
+      hostId: string,
+    ): Promise<YandexLinksHistoryPoint[]> {
+      const params = new URLSearchParams({
+        indicator: "LINKS_TOTAL_COUNT",
+      });
+      const data = await request(
+        `${API_BASE}/user/${await resolveUid()}/hosts/${encodeURIComponent(hostId)}/links/external/history?${params}`,
+        (d) => linksHistoryResponseSchema.parse(d),
+      );
+      return data.indicators.LINKS_TOTAL_COUNT.map((point) => ({
+        date: point.date.slice(0, 10),
+        linksTotalCount: point.value ?? null,
+      }));
+    },
+
+    /** /links/external/samples — one bounded page of example external links
+     *  (source page → target page). `count` is Yandex's total pool of samples,
+     *  which can far exceed what any client paginates through. */
+    async getExternalLinksSamples(
+      hostId: string,
+      input: { limit: number; offset: number },
+    ): Promise<{
+      count: number;
+      links: YandexExternalLinkSample[];
+    }> {
+      const params = new URLSearchParams({
+        limit: String(input.limit),
+        offset: String(input.offset),
+      });
+      const data = await request(
+        `${API_BASE}/user/${await resolveUid()}/hosts/${encodeURIComponent(hostId)}/links/external/samples?${params}`,
+        (d) => externalLinksSamplesResponseSchema.parse(d),
+      );
+      return {
+        count: data.count,
+        links: data.links.map((link) => ({
+          sourceUrl: link.source_url,
+          destinationUrl: link.destination_url,
+          discoveryDate: link.discovery_date?.slice(0, 10) ?? null,
+          sourceLastAccessDate:
+            link.source_last_access_date?.slice(0, 10) ?? null,
+        })),
       };
     },
   };
