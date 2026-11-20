@@ -11,6 +11,7 @@ import {
   addTrackingKeywords,
   getPanelKeywordSuggestions,
 } from "@/serverFunctions/rank-tracking";
+import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
 import { isLabsLocationCode } from "@/client/features/keywords/locations";
 import { Spinner } from "@/client/components/Spinner";
 import {
@@ -44,6 +45,7 @@ type Props = {
   projectId: string;
   domain: string;
   locationCode: number;
+  searchEngine: RankTrackingConfig["searchEngine"];
   onDone: (configId: string) => void;
   onClose: () => void;
 };
@@ -53,6 +55,7 @@ export function KeywordSuggestionStep({
   projectId,
   domain,
   locationCode,
+  searchEngine,
   onDone,
   onClose,
 }: Props) {
@@ -89,8 +92,9 @@ export function KeywordSuggestionStep({
   // Panel-backed suggestions cover every country — for markets Labs doesn't
   // serve (e.g. Russia) this is the only suggestion source.
   const panelsQuery = useQuery({
-    queryKey: ["panelKeywordSuggestions", projectId, domain],
-    queryFn: () => getPanelKeywordSuggestions({ data: { projectId, domain } }),
+    queryKey: ["panelKeywordSuggestions", projectId, domain, searchEngine],
+    queryFn: () =>
+      getPanelKeywordSuggestions({ data: { projectId, domain, searchEngine } }),
   });
   const panelSuggestions = panelsQuery.data?.suggestions ?? [];
   const panelSources = panelsQuery.data?.sources ?? [];

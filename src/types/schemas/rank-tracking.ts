@@ -72,6 +72,9 @@ export const getPanelKeywordSuggestionsSchema = z.object({
   projectId: z.string().uuid(),
   // Restricts suggestions to panels whose site covers this domain.
   domain: domainField.optional(),
+  // A keyword tracked by a tracker on ANOTHER engine is still a suggestion
+  // for this one — subtraction is engine-scoped when the engine is known.
+  searchEngine: searchEngineField.optional(),
 });
 
 export const createConfigSchema = z.object({

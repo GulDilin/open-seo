@@ -235,8 +235,14 @@ async function getKeywordsForConfig(configId: string) {
 /** Distinct keywords across a project's active configs — the pool suggestion
  *  sources subtract so already-tracked keywords are never re-suggested. With
  *  `domain`, only that domain's configs count (auto-import of one domain must
- *  not be blocked by another domain's trackers). */
-async function getKeywordsForActiveConfigs(projectId: string, domain?: string) {
+ *  not be blocked by another domain's trackers). `engines` narrows further to
+ *  configs on those engines — a keyword a google tracker checks is still a
+ *  suggestion for a yandex one. */
+async function getKeywordsForActiveConfigs(
+  projectId: string,
+  domain?: string,
+  engines?: (typeof rankTrackingConfigs.$inferSelect)["searchEngine"][],
+) {
   return db
     .selectDistinct({ keyword: rankTrackingKeywords.keyword })
     .from(rankTrackingKeywords)
@@ -249,6 +255,9 @@ async function getKeywordsForActiveConfigs(projectId: string, domain?: string) {
         eq(rankTrackingConfigs.projectId, projectId),
         eq(rankTrackingConfigs.isActive, true),
         ...(domain ? [eq(rankTrackingConfigs.domain, domain)] : []),
+        ...(engines?.length
+          ? [inArray(rankTrackingConfigs.searchEngine, engines)]
+          : []),
       ),
     );
 }

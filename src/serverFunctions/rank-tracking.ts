@@ -82,6 +82,7 @@ export const getPanelKeywordSuggestions = createServerFn({ method: "POST" })
     PanelKeywordSuggestions.get({
       projectId: context.projectId,
       domain: data.domain,
+      engines: data.searchEngine ? [data.searchEngine] : undefined,
     }),
   );
 

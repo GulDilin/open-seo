@@ -265,6 +265,7 @@ export function RankTrackingDomainDetail({
               configId={config.id}
               projectId={projectId}
               domain={config.domain}
+              searchEngine={config.searchEngine}
               onSuccess={handleKeywordsAdded}
               onCancel={() => setShowAddKeywords(false)}
             />

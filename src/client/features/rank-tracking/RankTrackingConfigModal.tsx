@@ -248,6 +248,7 @@ function RankTrackingConfigModalContent({
             projectId={projectId}
             domain={values.domain}
             locationCode={values.locationCode}
+            searchEngine={values.searchEngine ?? "google"}
             onDone={onSaved}
             onClose={closeKeywordStep}
           />

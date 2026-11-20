@@ -55,8 +55,11 @@ async function syncKey(configs: AutoImportConfig[]): Promise<number> {
         domain: configs[0].domain,
         limit: AUTO_IMPORT_KEYWORDS_PER_CONFIG,
         source,
-        // Another domain's tracked keyword must not block this domain.
+        // Another domain's tracked keyword must not block this domain, and a
+        // keyword tracked on an engine this source doesn't feed must not
+        // block it either (a google tracker's keyword is new to a yandex one).
         subtract: "domain",
+        engines: SOURCE_ENGINES[source],
       });
       perSource.set(source, suggestions);
     } catch (error) {

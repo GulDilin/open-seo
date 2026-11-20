@@ -5,6 +5,7 @@ import {
   addTrackingKeywords,
   getPanelKeywordSuggestions,
 } from "@/serverFunctions/rank-tracking";
+import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
 import { MAX_TRACKED_KEYWORD_LENGTH } from "@/shared/rank-tracking";
 import { Button } from "@/client/components/ui/button";
 import { Checkbox } from "@/client/components/ui/checkbox";
@@ -19,12 +20,14 @@ export function AddKeywordsPanel({
   configId,
   projectId,
   domain,
+  searchEngine,
   onSuccess,
   onCancel,
 }: {
   configId: string;
   projectId: string;
   domain: string;
+  searchEngine: RankTrackingConfig["searchEngine"];
   onSuccess: (result: {
     added: number;
     checkTriggered: boolean;
@@ -38,11 +41,13 @@ export function AddKeywordsPanel({
   const [matchCase, setMatchCase] = useState(false);
 
   // Same panel-backed suggestions as the new-tracker wizard: queries the
-  // site already shows up for in GSC / Yandex Webmaster, minus keywords any
-  // active tracker in this project already tracks.
+  // site already shows up for in GSC / Yandex Webmaster, minus keywords this
+  // tracker's engine already tracks (another engine's keyword is still a
+  // suggestion here).
   const panelsQuery = useQuery({
-    queryKey: ["panelKeywordSuggestions", projectId, domain],
-    queryFn: () => getPanelKeywordSuggestions({ data: { projectId, domain } }),
+    queryKey: ["panelKeywordSuggestions", projectId, domain, searchEngine],
+    queryFn: () =>
+      getPanelKeywordSuggestions({ data: { projectId, domain, searchEngine } }),
   });
   const panelSuggestions = panelsQuery.data?.suggestions ?? [];
   const panelSelection = usePanelSuggestionTable(panelSuggestions);

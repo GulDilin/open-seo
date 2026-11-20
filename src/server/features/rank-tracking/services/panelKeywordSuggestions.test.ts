@@ -291,6 +291,32 @@ it("returns empty suggestions and sources without error when no panel is connect
   expect(YandexWebmasterService.getSearchPerformance).not.toHaveBeenCalled();
 });
 
+it("scopes tracked-keyword subtraction to the given engines", async () => {
+  vi.mocked(GscService.getConnection).mockResolvedValue(gscConnection);
+  vi.mocked(YandexWebmasterService.getConnection).mockResolvedValue(
+    yandexConnection,
+  );
+  vi.mocked(GscService.getPerformance).mockResolvedValue(
+    gscPerformance([{ keys: ["widget pro"], impressions: 800, clicks: 5 }]),
+  );
+  vi.mocked(YandexWebmasterService.getSearchPerformance).mockResolvedValue(
+    yandexPerformance([
+      { query: "виджеты", impressions: 3000, clicks: 40, avgShowPosition: 6.2 },
+    ]),
+  );
+  vi.mocked(
+    RankTrackingRepository.getKeywordsForActiveConfigs,
+  ).mockResolvedValue([]);
+
+  // A yandex tracker must not have its suggestions subtracted by what a
+  // google tracker tracks — the engines filter is the repository's scoping.
+  await PanelKeywordSuggestions.get({ projectId: "p1", engines: ["yandex"] });
+
+  expect(
+    RankTrackingRepository.getKeywordsForActiveConfigs,
+  ).toHaveBeenCalledWith("p1", undefined, ["yandex"]);
+});
+
 it("skips panels whose site doesn't cover the tracked domain", async () => {
   vi.mocked(GscService.getConnection).mockResolvedValue({
     ...gscConnection,

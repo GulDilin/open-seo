@@ -1,4 +1,5 @@
 import { normalizeDomain } from "@/types/schemas/domain";
+import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
 import { GscService } from "@/server/features/gsc/services/GscService";
 import { GSC_MAX_ROW_LIMIT } from "@/server/features/gsc/searchAnalytics";
 import { YandexWebmasterService } from "@/server/features/yandex/services/YandexWebmasterService";
@@ -102,13 +103,16 @@ function siteCoversDomain(
  *  restricts to one panel's queries (the auto-import sync caps per source, so
  *  a busy panel can't consume the other's allocation). `subtract: "domain"`
  *  hides only keywords tracked for THIS domain instead of the whole project —
- *  auto-import for one domain must not be blocked by another domain's tracker. */
+ *  auto-import for one domain must not be blocked by another domain's tracker.
+ *  `engines` scopes subtraction to trackers on those engines: a query a
+ *  google tracker already checks is still worth suggesting to a yandex one. */
 async function get(input: {
   projectId: string;
   domain?: string;
   limit?: number;
   source?: PanelKeywordSource;
   subtract?: "project" | "domain";
+  engines?: RankTrackingConfig["searchEngine"][];
 }): Promise<PanelKeywordSuggestionsResult> {
   const [gscConnection, yandexConnection] = await Promise.all([
     GscService.getConnection(input.projectId),
@@ -160,9 +164,12 @@ async function get(input: {
         await RankTrackingRepository.getKeywordsForActiveConfigs(
           input.projectId,
           input.domain,
+          input.engines,
         )
       : await RankTrackingRepository.getKeywordsForActiveConfigs(
           input.projectId,
+          undefined,
+          input.engines,
         )
     ).map((kw) => kw.keyword.trim().toLowerCase()),
   );
