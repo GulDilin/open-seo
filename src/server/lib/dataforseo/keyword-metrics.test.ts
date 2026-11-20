@@ -246,4 +246,69 @@ describe("fetchKeywordMetricsForList", () => {
         error.message.includes("YANDEX_SEARCH_API_KEY"),
     );
   });
+
+  it("builds the documented Wordstat request for a Russia refresh", async () => {
+    vi.stubEnv("YANDEX_SEARCH_API_KEY", "yandex-key");
+    vi.stubEnv("YANDEX_FOLDER_ID", "folder-1");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          totalCount: "100",
+          results: [{ phrase: "кроссовки купить", count: "90" }],
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rows = await fetchKeywordMetricsForList(fakeClient({}), {
+      keywords: ["кроссовки купить"],
+      locationCode: 643,
+      languageCode: "ru",
+      creditFeature: "rank_tracking",
+    });
+
+    // The exact request the auto-metrics refresh sends: Yandex's documented
+    // body (folderId + phrase + numPhrases; regions only when numeric).
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [request, init] = fetchMock.mock.calls[0];
+    expect(request instanceof Request ? request.url : String(request)).toBe(
+      "https://searchapi.api.cloud.yandex.net/v2/wordstat/topRequests",
+    );
+    expect(new Headers(init?.headers).get("Authorization")).toBe(
+      "Api-Key yandex-key",
+    );
+    const requestBody = init?.body;
+    expect(
+      typeof requestBody === "string" ? JSON.parse(requestBody) : null,
+    ).toEqual({
+      folderId: "folder-1",
+      phrase: "кроссовки купить",
+      numPhrases: 100,
+    });
+    expect(rows).toEqual([
+      expect.objectContaining({ keyword: "кроссовки купить", searchVolume: 90 }),
+    ]);
+    vi.unstubAllGlobals();
+  });
+
+  it("returns null volume for phrases Yandex rejects as too long", async () => {
+    vi.stubEnv("YANDEX_SEARCH_API_KEY", "yandex-key");
+    vi.stubEnv("YANDEX_FOLDER_ID", "folder-1");
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rows = await fetchKeywordMetricsForList(fakeClient({}), {
+      keywords: ["а".repeat(401)],
+      locationCode: 643,
+      languageCode: "ru",
+      creditFeature: "rank_tracking",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(rows).toEqual([
+      expect.objectContaining({ keyword: "а".repeat(401), searchVolume: null }),
+    ]);
+    vi.unstubAllGlobals();
+  });
 });
