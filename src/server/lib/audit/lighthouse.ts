@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sort } from "remeda";
 import { AppError } from "@/server/lib/errors";
 import { getOptionalEnvValue } from "@/server/lib/runtime-env";
 import { detectUrlTemplate, canonicalUrlKey } from "./url-utils";
@@ -17,6 +18,8 @@ interface LighthouseSamplePage {
   url: string;
   statusCode: number;
   fetchClass: PageFetchClass;
+  /** Clicks from the start URL; null/undefined when only sitemap-reachable. */
+  crawlDepth?: number | null;
 }
 
 function canonicalUrlKeyWithoutTrailingSlash(url: string): string {
@@ -251,12 +254,16 @@ export async function storeLighthouseResult(input: {
 }
 
 /**
- * Select which pages to run Lighthouse on, based on the chosen strategy.
+ * Select which pages to run Lighthouse on, based on the chosen strategy:
+ * the start URL first, then one page per URL template, then — once the
+ * template pass no longer fills the budget — the shallowest remaining pages,
+ * so a larger budget favors pages real users actually reach.
  */
 export function selectLighthouseSample(
   pages: LighthouseSamplePage[],
   startUrl: string,
   strategy: LighthouseStrategy,
+  maxPages: number,
 ): string[] {
   if (strategy === "none") return [];
 
@@ -266,7 +273,6 @@ export function selectLighthouseSample(
     (p) => p.statusCode >= 200 && p.statusCode < 300 && p.fetchClass === "ok",
   );
 
-  // strategy === "auto": homepage + 1 per URL pattern, capped at 10
   const selected = new Set<string>();
 
   // Always include the start URL / homepage. Prefer an exact canonical match
@@ -300,9 +306,51 @@ export function selectLighthouseSample(
 
   // Add one page per template group
   for (const [, page] of templateGroups) {
-    if (selected.size >= 10) break;
+    if (selected.size >= maxPages) break;
+    selected.add(page.url);
+  }
+
+  // Fill a larger budget with the shallowest remaining pages (sitemap-only
+  // pages have no depth and rank deepest).
+  const rest = sort(
+    validPages.filter((p) => !selected.has(p.url)),
+    (a, b) => (a.crawlDepth ?? Infinity) - (b.crawlDepth ?? Infinity),
+  );
+  for (const page of rest) {
+    if (selected.size >= maxPages) break;
     selected.add(page.url);
   }
 
   return Array.from(selected);
+}
+
+/** Default Lighthouse page budget when PAGESPEED_API_KEY is set (own quota). */
+const KEYED_SAMPLE_MAX_PAGES = 50;
+/**
+ * Keyless default. Keyless PSI draws from one shared public quota that is
+ * routinely dry — keep the historical 10-page sample so a keyless audit
+ * wastes as few of those shared calls as possible.
+ */
+const KEYLESS_SAMPLE_MAX_PAGES = 10;
+/** Ceiling for a PAGESPEED_MAX_PAGES override; 250 pages = 500 PSI calls. */
+const SAMPLE_MAX_PAGES_CEILING = 250;
+
+/**
+ * How many pages one audit may run Lighthouse on. The old hard cap of 10
+ * pages (20 checks: mobile + desktop) was cost control for the paid
+ * DataForSEO source; PSI is free, so the cap is now quota-shaped — large by
+ * default with the deployment's own key, conservative without one.
+ * PAGESPEED_MAX_PAGES overrides both defaults.
+ */
+export async function resolveLighthouseSampleLimit(): Promise<number> {
+  const override = Number.parseInt(
+    (await getOptionalEnvValue("PAGESPEED_MAX_PAGES")) ?? "",
+    10,
+  );
+  if (Number.isInteger(override)) {
+    return Math.min(Math.max(override, 1), SAMPLE_MAX_PAGES_CEILING);
+  }
+  return (await getOptionalEnvValue("PAGESPEED_API_KEY"))
+    ? KEYED_SAMPLE_MAX_PAGES
+    : KEYLESS_SAMPLE_MAX_PAGES;
 }
