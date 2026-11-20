@@ -88,7 +88,7 @@ describe("yandexWebSearch", () => {
     await expect(wordstatTopRequests({ phrase: "x" })).rejects.toMatchObject({
       code: "UPSTREAM_UNAVAILABLE",
       message:
-        'Yandex Search API responded 400 on /v2/wordstat/topRequests: Invalid wordstat phrase: too long (code 3)',
+        "Yandex Search API responded 400 on /v2/wordstat/topRequests: Invalid wordstat phrase: too long (code 3)",
       details: {
         provider: "yandex",
         providerStatus: "400",
@@ -105,7 +105,8 @@ describe("yandexWebSearch", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(wordstatTopRequests({ phrase: "x" })).rejects.toMatchObject({
-      message: 'Yandex Search API responded 400 on /v2/wordstat/topRequests: Bad Request',
+      message:
+        "Yandex Search API responded 400 on /v2/wordstat/topRequests: Bad Request",
       details: { responseBody: "Bad Request" },
     });
     vi.unstubAllGlobals();

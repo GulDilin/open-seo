@@ -287,7 +287,10 @@ describe("fetchKeywordMetricsForList", () => {
       numPhrases: 100,
     });
     expect(rows).toEqual([
-      expect.objectContaining({ keyword: "кроссовки купить", searchVolume: 90 }),
+      expect.objectContaining({
+        keyword: "кроссовки купить",
+        searchVolume: 90,
+      }),
     ]);
     vi.unstubAllGlobals();
   });

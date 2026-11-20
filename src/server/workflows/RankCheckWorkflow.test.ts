@@ -216,9 +216,7 @@ describe("rank check workflow provider selection", () => {
     await runWorkflow({});
 
     expect(mocks.failRunIfActive).toHaveBeenCalledTimes(1);
-    expect(mocks.failRunIfActive.mock.calls[0][1]).toContain(
-      "SERPER_API_KEY",
-    );
+    expect(mocks.failRunIfActive.mock.calls[0][1]).toContain("SERPER_API_KEY");
     expect(mocks.failRunIfActive.mock.calls[0][1]).toContain(
       "DATAFORSEO_API_KEY",
     );
