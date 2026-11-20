@@ -9,11 +9,13 @@ import {
   profileBacklinksRowsPage,
   profileReferringDomainsPage,
   profileTopPagesPage,
+  readCachedBacklinksOverview,
   type BacklinksCache,
   type BacklinksRowsPageServiceInput,
   type ReferringDomainsPageServiceInput,
   type TopPagesPageServiceInput,
 } from "@/server/features/backlinks/services/backlinksServiceData";
+import type { BacklinksOverviewResult } from "@/server/features/backlinks/services/backlinksOverviewSchema";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import type { CreditFeature } from "@/shared/billing-credit-features";
 
@@ -44,9 +46,7 @@ function createBacklinksService(cache: BacklinksCache = defaultCache) {
       // results stay shared across callers.
       creditFeature?: CreditFeature,
     ) {
-      const cacheKey = await buildCacheKey("backlinks:overview:v2", {
-        ...buildTargetCacheInput(input, billingCustomer),
-      });
+      const cacheKey = await buildOverviewCacheKey(input, billingCustomer);
 
       return profileBacklinksOverview(
         cache,
@@ -54,6 +54,17 @@ function createBacklinksService(cache: BacklinksCache = defaultCache) {
         input,
         billingCustomer,
         creditFeature,
+      );
+    },
+    /** Serves only the R2-cached overview — never calls DataForSEO. Null on
+     *  miss or shape drift; callers that need live data use profileOverview. */
+    async cachedProfileOverview(
+      input: BacklinksLookupInput,
+      billingCustomer: BillingCustomerContext,
+    ): Promise<BacklinksOverviewResult | null> {
+      return readCachedBacklinksOverview(
+        cache,
+        await buildOverviewCacheKey(input, billingCustomer),
       );
     },
     async profileBacklinksPage(
@@ -109,6 +120,15 @@ function createBacklinksService(cache: BacklinksCache = defaultCache) {
       return profileTopPagesPage(cache, cacheKey, input, billingCustomer);
     },
   } as const;
+}
+
+function buildOverviewCacheKey(
+  input: BacklinksLookupInput,
+  billingCustomer: BillingCustomerContext,
+) {
+  return buildCacheKey("backlinks:overview:v2", {
+    ...buildTargetCacheInput(input, billingCustomer),
+  });
 }
 
 function buildTargetCacheInput(

@@ -73,6 +73,18 @@ export type BacklinksCache = {
   set(key: string, data: unknown, ttlSeconds: number): Promise<void>;
 };
 
+/** Cache read shared by the overview lookup and read-only consumers (the
+ *  domain overview) so both parse the stored shape identically. */
+export async function readCachedBacklinksOverview(
+  cache: BacklinksCache,
+  cacheKey: string,
+): Promise<BacklinksOverviewResult | null> {
+  const cached = backlinksOverviewCacheSchema.safeParse(
+    await cache.get(cacheKey),
+  );
+  return cached.success ? cached.data.overview : null;
+}
+
 type BacklinksDateRange = {
   dateFrom: string;
   dateTo: string;
@@ -85,13 +97,9 @@ export async function profileBacklinksOverview(
   billingCustomer: BillingCustomerContext,
   creditFeature?: CreditFeature,
 ): Promise<{ overview: BacklinksOverviewResult }> {
-  const cached = backlinksOverviewCacheSchema.safeParse(
-    await cache.get(cacheKey),
-  );
-  if (cached.success) {
-    return {
-      overview: cached.data.overview,
-    };
+  const cachedOverview = await readCachedBacklinksOverview(cache, cacheKey);
+  if (cachedOverview) {
+    return { overview: cachedOverview };
   }
 
   const dataforseo = createDataforseoClient(billingCustomer);
