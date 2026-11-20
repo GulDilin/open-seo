@@ -411,22 +411,28 @@ function RankTrackingConfigModalContent({
                 )}
               </form.AppField>
 
-              <div className="flex items-center gap-2">
-                <form.Field name="autoKeywordImport">
-                  {(field) => (
-                    <Switch
-                      id="auto-keyword-import"
-                      checked={Boolean(field.state.value)}
-                      onCheckedChange={(checked) => field.handleChange(checked)}
-                    />
-                  )}
-                </form.Field>
-                <FieldLabel
-                  htmlFor="auto-keyword-import"
-                  title="New queries from Search Console and Yandex Webmaster are added automatically before each scheduled check (up to 300 keywords). Each keyword is a paid SERP call on every check."
-                >
-                  Auto-add keywords from connected panels
-                </FieldLabel>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2">
+                  <form.Field name="autoKeywordImport">
+                    {(field) => (
+                      <Switch
+                        id="auto-keyword-import"
+                        checked={Boolean(field.state.value)}
+                        onCheckedChange={(checked) =>
+                          field.handleChange(checked)
+                        }
+                      />
+                    )}
+                  </form.Field>
+                  <FieldLabel htmlFor="auto-keyword-import">
+                    Auto-add keywords from connected panels
+                  </FieldLabel>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  New queries from Search Console and Yandex Webmaster are added
+                  automatically before each scheduled check (up to 300
+                  keywords). Each keyword is a paid SERP call on every check.
+                </p>
               </div>
 
               <CostEstimate

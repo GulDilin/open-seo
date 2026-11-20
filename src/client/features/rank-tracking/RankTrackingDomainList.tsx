@@ -270,6 +270,18 @@ function DomainRow({
           )}
           &middot; {devicesLabel(summary.devices)} &middot;{" "}
           {scheduleLabel(summary.scheduleInterval)}
+          {/* Auto-imported queries are part of the keyword count shown to the
+              right; the "Last" date below is the scheduled run each import
+              synced before — there is no separate import timestamp to show. */}
+          {summary.autoKeywordImport && (
+            <span
+              title="New queries from the connected panels are added before each scheduled check (up to 300 keywords)."
+              className="font-medium text-info"
+            >
+              {" "}
+              &middot; Auto-import
+            </span>
+          )}
           {summary.scheduleInterval !== "manual" && summary.nextCheckAt && (
             <> &middot; Next: {formatNextCheck(summary.nextCheckAt)}</>
           )}
