@@ -171,6 +171,111 @@ describe("yandexWebmasterClient", () => {
     expect(urlOf(url).match(/query_indicator=/g)).toHaveLength(4);
   });
 
+  it("accepts a live-captured response, mapping JSON null indicators to null", async () => {
+    // Live capture (falconspace.ru integration write-up): Yandex serializes
+    // an undefined indicator as JSON null (zero-click query), not as an
+    // absent key — `z.number().optional()` alone rejects this shape and the
+    // whole tab's payload died on it.
+    mocks.fetch
+      .mockResolvedValueOnce(jsonResponse({ user_id: 111 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          count: 2791,
+          queries: [
+            {
+              query_id: "4655b69c239b6462",
+              query_text: "cms для маркетплейса",
+              indicators: {
+                TOTAL_SHOWS: 92,
+                TOTAL_CLICKS: 8,
+                AVG_SHOW_POSITION: 7.52,
+                AVG_CLICK_POSITION: 6.375,
+              },
+            },
+            {
+              query_id: "dde486b6f18ac2c3",
+              query_text: "манго офис коллтрекинг видео",
+              indicators: {
+                TOTAL_SHOWS: 2,
+                TOTAL_CLICKS: 0,
+                AVG_SHOW_POSITION: 13,
+                AVG_CLICK_POSITION: null,
+              },
+            },
+          ],
+          date_from: "2026-10-19",
+          date_to: "2026-11-15",
+        }),
+      );
+    const result = await createYandexWebmasterClient({
+      userId: "u1",
+    }).getPopularQueries("https:ya.ru:80", {
+      orderBy: "TOTAL_CLICKS",
+      deviceType: "ALL",
+      dateFrom: "2026-10-19",
+      dateTo: "2026-11-15",
+      limit: 500,
+      offset: 0,
+    });
+
+    expect(result.rows[1]).toEqual({
+      queryId: "dde486b6f18ac2c3",
+      query: "манго офис коллтрекинг видео",
+      impressions: 2,
+      clicks: 0,
+      avgShowPosition: 13,
+      avgClickPosition: null,
+    });
+    expect(result.totalCount).toBe(2791);
+  });
+
+  it("accepts a summary with null values Yandex sends when they are undefined", async () => {
+    mocks.fetch
+      .mockResolvedValueOnce(jsonResponse({ user_id: 111 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          sqi: null,
+          excluded_pages_count: null,
+          searchable_pages_count: 42,
+          site_problems: { FATAL: null, POSSIBLE_PROBLEM: 4 },
+        }),
+      );
+    const summary = await createYandexWebmasterClient({
+      userId: "u1",
+    }).getSummary("https:ya.ru:80");
+
+    expect(summary).toEqual({
+      sqi: null,
+      excludedPagesCount: null,
+      searchablePagesCount: 42,
+      problems: {
+        fatal: null,
+        critical: null,
+        possibleProblem: 4,
+        recommendation: null,
+      },
+    });
+  });
+
+  it("names the endpoint when the response shape drifts", async () => {
+    mocks.fetch
+      .mockResolvedValueOnce(jsonResponse({ user_id: 111 }))
+      .mockResolvedValueOnce(jsonResponse({ queries: "not-an-array" }));
+    await expect(
+      createYandexWebmasterClient({ userId: "u1" }).getPopularQueries(
+        "https:ya.ru:80",
+        {
+          orderBy: "TOTAL_SHOWS",
+          deviceType: "ALL",
+          dateFrom: "2016-01-01",
+          dateTo: "2016-01-07",
+          limit: 500,
+          offset: 0,
+        },
+      ),
+    ).rejects.toThrow(/unexpected response shape .*search-queries\/popular/);
+  });
+
   it("normalizes the documented summary example", async () => {
     mocks.fetch
       .mockResolvedValueOnce(jsonResponse({ user_id: 111 }))

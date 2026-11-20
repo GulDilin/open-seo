@@ -76,6 +76,7 @@ const yandexPerformance = (
     avgClickPosition: null,
   })),
   summary: null,
+  summaryError: null,
   indexingStatus: null,
 });
 

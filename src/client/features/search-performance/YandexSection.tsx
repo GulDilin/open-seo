@@ -102,7 +102,13 @@ export function YandexSection({ projectId }: { projectId: string }) {
   }
   if (!data.connected) {
     return (
-      <div className="max-w-2xl p-4">
+      <div className="max-w-2xl space-y-3 p-4">
+        {data.unavailableReason ? (
+          <p role="alert" className="text-sm text-destructive">
+            Yandex Webmaster data is unavailable: {data.unavailableReason}{" "}
+            Reconnect Yandex Webmaster to restore it.
+          </p>
+        ) : null}
         <YandexConnectionCard projectId={projectId} />
       </div>
     );
@@ -135,6 +141,10 @@ export function YandexSection({ projectId }: { projectId: string }) {
             value={`${formatCount(summary.problems.possibleProblem)} / ${formatCount(summary.problems.recommendation)}`}
           />
         </dl>
+      ) : data.summaryError ? (
+        <p role="alert" className="text-sm text-muted-foreground">
+          Site summary unavailable: {data.summaryError}
+        </p>
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">

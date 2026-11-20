@@ -179,6 +179,8 @@ type YandexSearchPerformanceResult = {
   totalCount: number;
   rows: YandexQueryRow[];
   summary: YandexSiteSummary | null;
+  // Why the summary is missing when it is — shown instead of silent nulls.
+  summaryError: string | null;
   indexingStatus: string | null;
 };
 
@@ -248,6 +250,12 @@ async function getSearchPerformance(input: {
     totalCount: first.totalCount,
     rows,
     summary: summary.status === "fulfilled" ? summary.value : null,
+    summaryError:
+      summary.status === "rejected"
+        ? summary.reason instanceof Error
+          ? summary.reason.message
+          : String(summary.reason)
+        : null,
     indexingStatus:
       hostInfo.status === "fulfilled" ? hostInfo.value.indexingStatus : null,
   };

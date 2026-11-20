@@ -131,7 +131,8 @@ export const startYandexLink = createServerFn({ method: "POST" })
 
 /** The Yandex tab payload. Expected connection failures (not connected, dead
  *  grant) resolve to { connected: false } so the client renders the connect
- *  card instead of a hard error. */
+ *  card instead of a hard error. A dead grant also carries `unavailableReason`
+ *  so the card area explains WHY the data is missing. */
 export const getYandexSearchPerformance = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
   .validator(performanceSchema)
@@ -149,17 +150,17 @@ export const getYandexSearchPerformance = createServerFn({ method: "POST" })
         })),
       };
     } catch (error) {
-      if (
-        error instanceof YandexWebmasterNotConnectedError ||
-        isExpectedGrantFailure(error)
-      ) {
-        // The connect card shows "Connected" while data loads fall here —
-        // without this line the reason (dead grant vs 401/403) is invisible.
+      if (error instanceof YandexWebmasterNotConnectedError) {
+        return { connected: false as const, unavailableReason: null };
+      }
+      if (isExpectedGrantFailure(error)) {
+        const unavailableReason =
+          error instanceof Error ? error.message : String(error);
         console.warn("yandex.search_performance_unavailable", {
           projectId: context.projectId,
-          reason: error instanceof Error ? error.message : String(error),
+          reason: unavailableReason,
         });
-        return { connected: false as const };
+        return { connected: false as const, unavailableReason };
       }
       throw error;
     }

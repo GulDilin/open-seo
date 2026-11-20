@@ -88,6 +88,32 @@ describe("yandex webmaster MCP tool", () => {
     expect(structured).toContain("indexingStatus");
   });
 
+  it("states the actual reason when the site summary call failed", async () => {
+    mocks.getSearchPerformance.mockResolvedValue({
+      hostUrl: "https://ya.ru/",
+      orderBy: "clicks",
+      deviceType: "all",
+      reportedDateFrom: "2026-09-20",
+      reportedDateTo: "2026-10-16",
+      totalCount: 10,
+      rows: [],
+      summary: null,
+      summaryError:
+        "This site is no longer verified in the connected Yandex Webmaster account.",
+      indexingStatus: null,
+    });
+
+    const result = await yandexTools.getYandexSearchPerformanceTool.handler(
+      args,
+      toolContext,
+    );
+
+    expect(textContent(result)).toContain(
+      "Site summary unavailable: This site is no longer verified",
+    );
+    expect(JSON.stringify(result.structuredContent)).toContain("summaryError");
+  });
+
   it("answers not_connected with a connect link", async () => {
     mocks.getSearchPerformance.mockRejectedValue(
       new YandexWebmasterNotConnectedError("project_1"),
