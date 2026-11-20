@@ -79,6 +79,21 @@ const KEYWORDS_ONLY_SORTS: ReadonlySet<DomainSortMode> = new Set([
   "cpc",
 ]);
 
+// Same wording as the Backlinks page's summary. The backlinks counts always
+// cover the hostname plus subdomains, so the scope hint applies like the
+// organic metrics' one.
+const BACKLINKS_HELP = "Total links pointing to this site or page.";
+const REFERRING_DOMAINS_HELP = "Unique domains linking to this site or page.";
+
+function backlinksMetricLabel(label: string, helpText: string, hint?: string) {
+  return (
+    <HelpLabel
+      label={label}
+      helpText={hint ? `${helpText} ${hint}` : helpText}
+    />
+  );
+}
+
 function getSortSearchUpdate(
   nextSort: DomainSortMode,
   nextOrder: SortOrder,
@@ -664,6 +679,28 @@ export function DomainOverviewPage({
                           ),
                           value: formatMetric(
                             state.overview.organicKeywords,
+                            state.overview.hasData,
+                          ),
+                        },
+                        {
+                          label: backlinksMetricLabel(
+                            "Backlinks",
+                            BACKLINKS_HELP,
+                            overviewMetricsHint,
+                          ),
+                          value: formatMetric(
+                            state.overview.backlinks,
+                            state.overview.hasData,
+                          ),
+                        },
+                        {
+                          label: backlinksMetricLabel(
+                            "Referring domains",
+                            REFERRING_DOMAINS_HELP,
+                            overviewMetricsHint,
+                          ),
+                          value: formatMetric(
+                            state.overview.referringDomains,
                             state.overview.hasData,
                           ),
                         },
