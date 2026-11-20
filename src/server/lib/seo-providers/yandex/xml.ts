@@ -70,7 +70,7 @@ function hostOf(url: string): string {
   }
 }
 
-export interface YandexXmlError {
+interface YandexXmlError {
   code: string;
   message: string;
 }
