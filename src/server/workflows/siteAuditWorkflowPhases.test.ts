@@ -222,10 +222,11 @@ describe("app-shell crawl coverage", () => {
       const finalize = vi
         .fn()
         .mockResolvedValue({ brokenLinks: [], orphanPages: [] });
-      // Only these two scratchpad methods are reached after mocked discovery/crawl.
+      // Only these scratchpad methods are reached after mocked discovery/crawl.
       // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
       vi.mocked(getAuditScratchpad).mockReturnValue({
         runFinalizeChecks: finalize,
+        getExternalLinks: vi.fn().mockResolvedValue([]),
         destroy: vi.fn(),
       } as unknown as ReturnType<typeof getAuditScratchpad>);
       pgStepMock.mockImplementation(

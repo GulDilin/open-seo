@@ -22,6 +22,7 @@ import { DurableObject, env } from "cloudflare:workers";
 import type { CrawlThrottleState } from "@/server/lib/audit/crawl-throttle";
 import {
   BROKEN_LINKS_SQL,
+  EXTERNAL_LINKS_SQL,
   FRONTIER_DISCOVER_SQL,
   ORPHAN_PAGES_SQL,
   SCRATCHPAD_SCHEMA_SQL,
@@ -62,11 +63,14 @@ interface ScratchpadPageRow {
   redirectUrl: string | null;
 }
 
-/** One crawled page's internal link targets — the whole row is one write. */
+/**
+ * One crawled page's link targets as a single JSON-array row (internal for
+ * page_links, external for external_links) — the whole row is one write.
+ */
 export interface ScratchpadPageLinksRow {
   pageId: string;
   url: string;
-  /** Same-origin link targets, already deduped by the page analyzer. */
+  /** Link targets, already deduped by the page analyzer. */
   targets: string[];
 }
 
@@ -75,6 +79,8 @@ interface RecordBatchInput {
   crawledUrls: string[];
   pages: ScratchpadPageRow[];
   links: ScratchpadPageLinksRow[];
+  /** External (cross-origin) link targets per page, for the finalize check. */
+  externalLinks: ScratchpadPageLinksRow[];
   /** Newly discovered same-origin URLs to enqueue (already policy-filtered). */
   discovered: Array<{ url: string; depth: number | null }>;
 }
@@ -86,12 +92,20 @@ interface BrokenLinkRow {
   targetStatus: number;
 }
 
+interface ExternalLinkRow {
+  sourcePageId: string;
+  sourceUrl: string;
+  targetUrl: string;
+}
+
 interface OrphanPageRow {
   pageId: string;
   url: string;
 }
 
 const BROKEN_LINK_ISSUE_CAP = 2_000;
+/** Edge rows handed to the external link check (caps RPC payload size). */
+const EXTERNAL_LINK_ROW_CAP = 5_000;
 const CLEANUP_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 /**
  * Stop storing link targets once the database reaches this size. The link
@@ -213,6 +227,14 @@ export class AuditScratchpad extends DurableObject {
           JSON.stringify(page.targets),
         );
       }
+      for (const page of input.externalLinks) {
+        this.ctx.storage.sql.exec(
+          `INSERT OR REPLACE INTO external_links (page_id, url, targets_json) VALUES (?, ?, ?)`,
+          page.pageId,
+          page.url,
+          JSON.stringify(page.targets),
+        );
+      }
     }
     for (const found of input.discovered) {
       this.ctx.storage.sql.exec(FRONTIER_DISCOVER_SQL, found.url, found.depth);
@@ -278,6 +300,24 @@ export class AuditScratchpad extends DurableObject {
         : [];
 
     return { brokenLinks, orphanPages };
+  }
+
+  /** The recorded external link edges, for the finalize link check. */
+  async getExternalLinks(
+    limit = EXTERNAL_LINK_ROW_CAP,
+  ): Promise<ExternalLinkRow[]> {
+    return this.ctx.storage.sql
+      .exec<{
+        source_page_id: string;
+        source_url: string;
+        target_url: string;
+      }>(EXTERNAL_LINKS_SQL, limit)
+      .toArray()
+      .map((row) => ({
+        sourcePageId: row.source_page_id,
+        sourceUrl: row.source_url,
+        targetUrl: row.target_url,
+      }));
   }
 
   /** Wipe all state (success path, or explicit audit deletion). */

@@ -33,6 +33,11 @@ export const SCRATCHPAD_SCHEMA_SQL = `
     url TEXT NOT NULL,
     targets_json TEXT NOT NULL
   ) WITHOUT ROWID;
+  CREATE TABLE IF NOT EXISTS external_links (
+    page_id TEXT PRIMARY KEY,
+    url TEXT NOT NULL,
+    targets_json TEXT NOT NULL
+  ) WITHOUT ROWID;
   CREATE TABLE IF NOT EXISTS links (
     source_page_id TEXT NOT NULL,
     source_url TEXT NOT NULL,
@@ -90,6 +95,20 @@ export const BROKEN_LINKS_SQL = `
     WHERE (m.fetch_class = 'error' OR (m.status_code >= 400 AND m.fetch_class = 'ok'))
   )
   ORDER BY source_page_id, target_url
+  LIMIT ?
+`;
+
+/**
+ * Every external link edge recorded during the crawl, expanded to one row
+ * per (source page, target). External targets are never crawled, so their
+ * fate is not in page_mirror — finalize fetches them itself (see
+ * external-links.ts) and maps the outcome onto these edges. Same JSON-array
+ * layout and billing rationale as page_links. Takes the row cap.
+ */
+export const EXTERNAL_LINKS_SQL = `
+  SELECT p.page_id AS source_page_id, p.url AS source_url, j.value AS target_url
+  FROM external_links p, json_each(p.targets_json) AS j
+  ORDER BY p.url, j.value
   LIMIT ?
 `;
 

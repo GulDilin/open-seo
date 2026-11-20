@@ -64,6 +64,14 @@ export const AUDIT_ISSUE_TYPES = {
     howToFix:
       "Update the link to point at the correct live URL, or remove it. If the target was moved, prefer linking directly to the new URL rather than relying on a redirect.",
   },
+  "broken-external-link": {
+    severity: "warning",
+    title: "Broken external link",
+    explanation:
+      "This page links to an external site that returned an error status (4xx/5xx) or could not be reached. The destination may have moved or disappeared; dead outbound links frustrate users and signal neglect to search engines. External links are checked for a sample of pages, so others may exist.",
+    howToFix:
+      "Update the link to the destination's current URL, or remove it. If the external site is gone, replace the reference with an alternative source.",
+  },
   "missing-title": {
     severity: "critical",
     title: "Missing title tag",
