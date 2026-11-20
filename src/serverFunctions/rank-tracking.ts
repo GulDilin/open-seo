@@ -29,7 +29,13 @@ import {
   getProjectTrendSchema,
   getProjectSummarySchema,
   getPositionMatrixSchema,
+  getDomainTrackerSummarySchema,
 } from "@/types/schemas/rank-tracking";
+import {
+  toSummaryPoint,
+  type RankProjectTrendPoint,
+  type RankProjectSummary,
+} from "@/shared/rank-tracking";
 
 export interface RankKeywordHistoryPoint {
   device: "desktop" | "mobile";
@@ -393,53 +399,8 @@ export const getRankPositionMatrix = createServerFn({ method: "POST" })
     );
   });
 
-export interface RankProjectTrendPoint {
-  day: string;
-  total: number;
-  pages: number;
-  top1: number;
-  top2to5: number;
-  top6to10: number;
-  top11to50: number;
-  notInTop50: number;
-  notChecked: number;
-}
-
-/** A trend point without its day — the shape the summary tiles take. */
-export type RankProjectSummary = Omit<RankProjectTrendPoint, "day">;
-
-/** SQLite aggregates can come back as strings; normalize once. */
-function toCount(value: unknown): number {
-  return Number(value) || 0;
-}
-
-/** Normalize aggregates and derive the two remainder buckets; shared by the
- * trend's days and the summary so tiles and chart bucket identically. */
-function toSummaryPoint(row: {
-  total: unknown;
-  pages: unknown;
-  top1: unknown;
-  top2to5: unknown;
-  top6to10: unknown;
-  top11to50: unknown;
-  keywordsTotal: unknown;
-}): RankProjectSummary {
-  const total = toCount(row.total);
-  const top1 = toCount(row.top1);
-  const top2to5 = toCount(row.top2to5);
-  const top6to10 = toCount(row.top6to10);
-  const top11to50 = toCount(row.top11to50);
-  return {
-    total,
-    pages: toCount(row.pages),
-    top1,
-    top2to5,
-    top6to10,
-    top11to50,
-    notInTop50: Math.max(0, total - top1 - top2to5 - top6to10 - top11to50),
-    notChecked: Math.max(0, toCount(row.keywordsTotal) - total),
-  };
-}
+// The trend/summary point shapes live in shared (the domain overview's
+// tracker summary renders them too).
 
 /** The project-level visibility chart: one row per day, buckets summed across
  *  the latest full run of every in-scope config (engine/market filters). */
@@ -486,3 +447,18 @@ export const getRankProjectSummary = createServerFn({ method: "POST" })
     });
     return toSummaryPoint(row);
   });
+
+/** The domain overview's per-engine tracker summary: visibility tiles, trend,
+ *  and top ranking pages for every engine tracked on the project's own
+ *  domain. Free first-party tracker data — independent of DataForSEO. */
+export const getDomainTrackerSummary = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(getDomainTrackerSummarySchema)
+  .handler(async ({ data, context }) =>
+    RankTrackingService.getDomainTrackerSummary({
+      projectId: context.projectId,
+      projectDomain: context.project?.domain ?? null,
+      device: data.device,
+      sinceDays: data.sinceDays,
+    }),
+  );

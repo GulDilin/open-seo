@@ -8,6 +8,7 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lte,
   max,
@@ -533,4 +534,267 @@ export async function getEarliestSnapshotsForKeywords(
   }
 
   return allResults;
+}
+
+// ---------------------------------------------------------------------------
+// Domain overview: per-engine aggregates over the ACTIVE trackers whose domain
+// is the project's own domain. Same scoping idioms as getProjectTrend /
+// getProjectSummary, with the engine as an extra grouping dimension.
+// ---------------------------------------------------------------------------
+
+type DomainTrackerScope = {
+  projectId: string;
+  domain: string;
+  device: "desktop" | "mobile";
+};
+
+function activeDomainConfigIds(scope: DomainTrackerScope) {
+  return db
+    .select({ id: rankTrackingConfigs.id })
+    .from(rankTrackingConfigs)
+    .where(
+      and(
+        eq(rankTrackingConfigs.projectId, scope.projectId),
+        eq(rankTrackingConfigs.isActive, true),
+        eq(rankTrackingConfigs.domain, scope.domain),
+      ),
+    );
+}
+
+/** Latest snapshot per keyword (fixed device), the getProjectSummary idiom,
+ *  as a joinable subquery. Shared by the summary and top-pages aggregates. */
+function latestSnapshotsPerKeyword(scope: DomainTrackerScope) {
+  const scopedRunIds = db
+    .select({ id: rankCheckRuns.id })
+    .from(rankCheckRuns)
+    .where(
+      and(
+        eq(rankCheckRuns.status, "completed"),
+        inArray(rankCheckRuns.configId, activeDomainConfigIds(scope)),
+      ),
+    );
+
+  const scopedKeywordIds = db
+    .select({ id: rankTrackingKeywords.id })
+    .from(rankTrackingKeywords)
+    .where(
+      inArray(rankTrackingKeywords.configId, activeDomainConfigIds(scope)),
+    );
+
+  const latestPerKeyword = db
+    .select({
+      trackingKeywordId: rankSnapshots.trackingKeywordId,
+      targetCheckedAt: max(rankSnapshots.checkedAt).as("target_checked_at"),
+    })
+    .from(rankSnapshots)
+    .where(
+      and(
+        inArray(rankSnapshots.runId, scopedRunIds),
+        inArray(rankSnapshots.trackingKeywordId, scopedKeywordIds),
+        eq(rankSnapshots.device, scope.device),
+      ),
+    )
+    .groupBy(rankSnapshots.trackingKeywordId)
+    .as("latest_per_keyword");
+
+  return { latestPerKeyword, scopedRunIds, scopedKeywordIds };
+}
+
+/**
+ * Per-engine, per-day visibility buckets — getProjectTrend scoped to the
+ * domain's active trackers and grouped by engine too, one row per engine+day
+ * oldest first. `keywordsTotal` is merged in from a second one-row-per-run
+ * query so the snapshot fan-out can't multiply it.
+ */
+export async function getDomainEngineTrends(
+  scope: DomainTrackerScope & { sinceDays: number },
+) {
+  const latestRuns = db
+    .select({
+      configId: rankCheckRuns.configId,
+      day: sql<string>`substr(${rankCheckRuns.startedAt}, 1, 10)`.as("day"),
+      latestStartedAt: max(rankCheckRuns.startedAt).as("latest_started_at"),
+    })
+    .from(rankCheckRuns)
+    .innerJoin(
+      rankTrackingConfigs,
+      eq(rankCheckRuns.configId, rankTrackingConfigs.id),
+    )
+    .where(
+      and(
+        eq(rankCheckRuns.projectId, scope.projectId),
+        eq(rankCheckRuns.status, "completed"),
+        eq(rankCheckRuns.isSubsetRun, false),
+        gte(rankCheckRuns.startedAt, cutoffTimestamp(scope.sinceDays)),
+        eq(rankTrackingConfigs.domain, scope.domain),
+        eq(rankTrackingConfigs.isActive, true),
+      ),
+    )
+    .groupBy(
+      rankCheckRuns.configId,
+      sql`substr(${rankCheckRuns.startedAt}, 1, 10)`,
+    )
+    .as("latest_runs");
+
+  const matchedRun = and(
+    eq(rankCheckRuns.configId, latestRuns.configId),
+    eq(rankCheckRuns.startedAt, latestRuns.latestStartedAt),
+    eq(rankCheckRuns.status, "completed"),
+    eq(rankCheckRuns.isSubsetRun, false),
+  );
+
+  const runsPerDay = await db
+    .select({
+      day: latestRuns.day,
+      searchEngine: rankTrackingConfigs.searchEngine,
+      keywordsTotal: rankCheckRuns.keywordsTotal,
+    })
+    .from(latestRuns)
+    .innerJoin(rankCheckRuns, matchedRun)
+    .innerJoin(
+      rankTrackingConfigs,
+      eq(rankCheckRuns.configId, rankTrackingConfigs.id),
+    );
+
+  const bucketsPerDay = await db
+    .select({
+      day: latestRuns.day,
+      searchEngine: rankTrackingConfigs.searchEngine,
+      total: count(),
+      top1: sql<number>`sum(case when ${rankSnapshots.position} = 1 then 1 else 0 end)`,
+      top2to5: sql<number>`sum(case when ${rankSnapshots.position} between 2 and 5 then 1 else 0 end)`,
+      top6to10: sql<number>`sum(case when ${rankSnapshots.position} between 6 and 10 then 1 else 0 end)`,
+      top11to50: sql<number>`sum(case when ${rankSnapshots.position} between 11 and 50 then 1 else 0 end)`,
+      pages: countDistinct(rankSnapshots.url),
+    })
+    .from(latestRuns)
+    .innerJoin(rankCheckRuns, matchedRun)
+    .innerJoin(
+      rankTrackingConfigs,
+      eq(rankCheckRuns.configId, rankTrackingConfigs.id),
+    )
+    .innerJoin(
+      rankSnapshots,
+      and(
+        eq(rankSnapshots.runId, rankCheckRuns.id),
+        eq(rankSnapshots.device, scope.device),
+      ),
+    )
+    .groupBy(sql`day`, rankTrackingConfigs.searchEngine)
+    .orderBy(sql`day`);
+
+  const keywordsTotalByKey = new Map<string, number>();
+  for (const row of runsPerDay) {
+    const key = `${row.searchEngine}|${row.day}`;
+    keywordsTotalByKey.set(
+      key,
+      (keywordsTotalByKey.get(key) ?? 0) + (row.keywordsTotal ?? 0),
+    );
+  }
+  return bucketsPerDay.map((row) => ({
+    ...row,
+    keywordsTotal:
+      keywordsTotalByKey.get(`${row.searchEngine}|${row.day}`) ?? 0,
+  }));
+}
+
+/**
+ * Per-engine current-state buckets and tracked-keyword totals, from each
+ * keyword's latest snapshot — the getProjectSummary shape grouped by engine.
+ * Buckets and keyword counts come back separately: a keyword with no snapshot
+ * yet appears only in the counts (the caller derives notChecked).
+ */
+export async function getDomainEngineSummaries(scope: DomainTrackerScope) {
+  const { latestPerKeyword, scopedRunIds, scopedKeywordIds } =
+    latestSnapshotsPerKeyword(scope);
+
+  const buckets = await db
+    .select({
+      searchEngine: rankTrackingConfigs.searchEngine,
+      total: count(),
+      top1: sql<number>`sum(case when ${rankSnapshots.position} = 1 then 1 else 0 end)`,
+      top2to5: sql<number>`sum(case when ${rankSnapshots.position} between 2 and 5 then 1 else 0 end)`,
+      top6to10: sql<number>`sum(case when ${rankSnapshots.position} between 6 and 10 then 1 else 0 end)`,
+      top11to50: sql<number>`sum(case when ${rankSnapshots.position} between 11 and 50 then 1 else 0 end)`,
+      pages: countDistinct(rankSnapshots.url),
+    })
+    .from(rankSnapshots)
+    .innerJoin(
+      latestPerKeyword,
+      and(
+        eq(rankSnapshots.trackingKeywordId, latestPerKeyword.trackingKeywordId),
+        eq(rankSnapshots.checkedAt, latestPerKeyword.targetCheckedAt),
+      ),
+    )
+    .innerJoin(rankCheckRuns, eq(rankSnapshots.runId, rankCheckRuns.id))
+    .innerJoin(
+      rankTrackingConfigs,
+      eq(rankCheckRuns.configId, rankTrackingConfigs.id),
+    )
+    .where(
+      and(
+        inArray(rankSnapshots.runId, scopedRunIds),
+        inArray(rankSnapshots.trackingKeywordId, scopedKeywordIds),
+        eq(rankSnapshots.device, scope.device),
+      ),
+    )
+    .groupBy(rankTrackingConfigs.searchEngine);
+
+  const keywordsPerEngine = await db
+    .select({
+      searchEngine: rankTrackingConfigs.searchEngine,
+      count: count(),
+    })
+    .from(rankTrackingKeywords)
+    .innerJoin(
+      rankTrackingConfigs,
+      eq(rankTrackingKeywords.configId, rankTrackingConfigs.id),
+    )
+    .where(inArray(rankTrackingKeywords.configId, activeDomainConfigIds(scope)))
+    .groupBy(rankTrackingConfigs.searchEngine);
+
+  return { buckets, keywordsPerEngine };
+}
+
+/**
+ * Per-engine top ranking pages: for each keyword's latest snapshot that holds
+ * a position AND a URL, grouped by engine+page — how many queries land on the
+ * page and the best of their positions. Ordered by query count; the caller
+ * slices the per-engine top list.
+ */
+export async function getDomainEngineTopPages(scope: DomainTrackerScope) {
+  const { latestPerKeyword, scopedRunIds, scopedKeywordIds } =
+    latestSnapshotsPerKeyword(scope);
+
+  return db
+    .select({
+      searchEngine: rankTrackingConfigs.searchEngine,
+      url: rankSnapshots.url,
+      keywords: count(),
+      bestPosition: min(rankSnapshots.position),
+    })
+    .from(rankSnapshots)
+    .innerJoin(
+      latestPerKeyword,
+      and(
+        eq(rankSnapshots.trackingKeywordId, latestPerKeyword.trackingKeywordId),
+        eq(rankSnapshots.checkedAt, latestPerKeyword.targetCheckedAt),
+      ),
+    )
+    .innerJoin(rankCheckRuns, eq(rankSnapshots.runId, rankCheckRuns.id))
+    .innerJoin(
+      rankTrackingConfigs,
+      eq(rankCheckRuns.configId, rankTrackingConfigs.id),
+    )
+    .where(
+      and(
+        inArray(rankSnapshots.runId, scopedRunIds),
+        inArray(rankSnapshots.trackingKeywordId, scopedKeywordIds),
+        eq(rankSnapshots.device, scope.device),
+        isNotNull(rankSnapshots.position),
+        isNotNull(rankSnapshots.url),
+      ),
+    )
+    .groupBy(rankTrackingConfigs.searchEngine, rankSnapshots.url)
+    .orderBy(sql`count(*) desc, min(${rankSnapshots.position}) asc`);
 }

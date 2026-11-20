@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- the tracker repository object: config CRUD, run claims, keyword ops, and the snapshot/trend/domain-summary reads in one module */
 import {
   and,
   asc,
@@ -31,6 +32,9 @@ import {
   getProjectTrend,
   getProjectSummary,
   getPositionMatrix,
+  getDomainEngineTrends,
+  getDomainEngineSummaries,
+  getDomainEngineTopPages,
 } from "./snapshotQueries";
 import {
   tryCreateRun,
@@ -443,6 +447,24 @@ async function getKeywordCountsForConfigs(configIds: string[]) {
   return counts;
 }
 
+/** Engines (with their device coverage) of the project's ACTIVE trackers on
+ *  the given domain — the domain overview's per-engine block list. */
+async function getDomainTrackerEngines(projectId: string, domain: string) {
+  return db
+    .select({
+      searchEngine: rankTrackingConfigs.searchEngine,
+      devices: rankTrackingConfigs.devices,
+    })
+    .from(rankTrackingConfigs)
+    .where(
+      and(
+        eq(rankTrackingConfigs.projectId, projectId),
+        eq(rankTrackingConfigs.isActive, true),
+        eq(rankTrackingConfigs.domain, domain),
+      ),
+    );
+}
+
 export const RankTrackingRepository = {
   getConfigsForProject,
   getConfigById,
@@ -478,4 +500,8 @@ export const RankTrackingRepository = {
   getProjectTrend,
   getProjectSummary,
   getPositionMatrix,
+  getDomainTrackerEngines,
+  getDomainEngineTrends,
+  getDomainEngineSummaries,
+  getDomainEngineTopPages,
 };

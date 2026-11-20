@@ -133,6 +133,7 @@ async function seedProject(id: string, archivedAt: string | null = null) {
 async function seedConfig(input: {
   id: string;
   projectId?: string;
+  domain?: string;
   nextCheckAt?: string | null;
   scheduleInterval?: string;
   isActive?: number;
@@ -146,7 +147,7 @@ async function seedConfig(input: {
     args: [
       input.id,
       input.projectId ?? "proj_1",
-      `${input.id}.example.com`,
+      input.domain ?? `${input.id}.example.com`,
       input.scheduleInterval ?? "daily",
       input.isActive ?? 1,
       input.nextCheckAt === undefined
@@ -738,6 +739,152 @@ describe("removeKeywordsFromConfig", () => {
       "SELECT tracking_keyword_id AS kw FROM rank_snapshots ORDER BY kw",
     );
     expect(remaining.rows.map((row) => row.kw)).toEqual(["kw2"]);
+  });
+});
+
+// The domain overview's per-engine aggregates: one row per engine (per day for
+// the trend) over the ACTIVE trackers whose domain is the project's own.
+const DOMAIN_SCOPE = {
+  projectId: "proj_1",
+  domain: "mysite.com",
+  device: "desktop" as const,
+};
+
+describe("getDomainEngineTrends", () => {
+  it("buckets per engine and day, scoped to the domain's active trackers", async () => {
+    await seedProject("proj_1");
+    await seedConfig({ id: "cfg_g", domain: "mysite.com" });
+    await seedConfig({
+      id: "cfg_y",
+      domain: "mysite.com",
+      searchEngine: "yandex",
+    });
+    // Same project, other domain — and the project domain but archived: both
+    // must stay out of every engine's rows.
+    await seedConfig({ id: "cfg_other", domain: "other.com" });
+    await seedConfig({ id: "cfg_off", domain: "mysite.com", isActive: 0 });
+
+    await seedTrendRun({
+      runId: "g_older",
+      configId: "cfg_g",
+      startedAt: daysAgo(2),
+      keywordsTotal: 2,
+      snapshots: [
+        { keywordId: "g_kw1", position: 2, url: "https://s/a" },
+        // A mobile row never leaks into the desktop trend.
+        { keywordId: "g_kw1", device: "mobile", position: 1 },
+      ],
+    });
+    await seedTrendRun({
+      runId: "y_run",
+      configId: "cfg_y",
+      startedAt: daysAgo(1),
+      keywordsTotal: 1,
+      snapshots: [{ keywordId: "y_kw1", position: 12, url: "https://s/c" }],
+    });
+    await seedTrendRun({
+      runId: "foreign",
+      configId: "cfg_other",
+      startedAt: daysAgo(1),
+      snapshots: [{ keywordId: "o_kw1", position: 1 }],
+    });
+
+    const trend = await RankTrackingRepository.getDomainEngineTrends({
+      ...DOMAIN_SCOPE,
+      sinceDays: 30,
+    });
+
+    expect(trend).toHaveLength(2);
+    const [googleDay, yandexDay] = trend;
+    expect(googleDay).toMatchObject({
+      searchEngine: "google",
+      keywordsTotal: 2,
+    });
+    expect(Number(googleDay.total)).toBe(1); // desktop row only
+    expect(Number(googleDay.top2to5)).toBe(1);
+    expect(yandexDay).toMatchObject({
+      searchEngine: "yandex",
+      keywordsTotal: 1,
+    });
+    expect(Number(yandexDay.top11to50)).toBe(1);
+  });
+});
+
+describe("getDomainEngineSummaries and getDomainEngineTopPages", () => {
+  it("summarize each keyword's latest snapshot per engine and rank pages by query count", async () => {
+    await seedProject("proj_1");
+    await seedConfig({ id: "cfg_g", domain: "mysite.com" });
+    await seedConfig({
+      id: "cfg_y",
+      domain: "mysite.com",
+      searchEngine: "yandex",
+    });
+    for (const [id, configId] of [
+      ["g_kw1", "cfg_g"],
+      ["g_kw2", "cfg_g"],
+      ["g_kw_gone", "cfg_g"],
+      ["y_kw1", "cfg_y"],
+    ] as const) {
+      await seedKeyword(configId, id);
+    }
+
+    await seedTrendRun({
+      runId: "g_older",
+      configId: "cfg_g",
+      startedAt: daysAgo(2),
+      snapshots: [
+        // g_kw1's stale position must lose to the newer run's.
+        { keywordId: "g_kw1", position: 1, url: "https://s/a" },
+      ],
+    });
+    await seedTrendRun({
+      runId: "g_newer",
+      configId: "cfg_g",
+      startedAt: daysAgo(1),
+      snapshots: [
+        { keywordId: "g_kw1", position: 7, url: "https://s/a" },
+        { keywordId: "g_kw2", position: 2, url: "https://s/a" },
+        // Not found (null position) and unknown page (null url) drop out of
+        // the top pages but still count as checked.
+        { keywordId: "g_kw_gone", position: null },
+      ],
+    });
+    await seedTrendRun({
+      runId: "y_run",
+      configId: "cfg_y",
+      startedAt: daysAgo(1),
+      snapshots: [{ keywordId: "y_kw1", position: 3, url: "https://s/c" }],
+    });
+
+    const { buckets, keywordsPerEngine } =
+      await RankTrackingRepository.getDomainEngineSummaries(DOMAIN_SCOPE);
+
+    const google = buckets.find((row) => row.searchEngine === "google");
+    expect(Number(google?.total)).toBe(3);
+    expect(Number(google?.top2to5)).toBe(1); // g_kw2
+    expect(Number(google?.top6to10)).toBe(1); // g_kw1's latest, not its stale 1
+    expect(Number(google?.pages)).toBe(1);
+    expect(
+      keywordsPerEngine.find((row) => row.searchEngine === "yandex")?.count,
+    ).toBe(1);
+
+    const topPages =
+      await RankTrackingRepository.getDomainEngineTopPages(DOMAIN_SCOPE);
+
+    expect(topPages).toEqual([
+      {
+        searchEngine: "google",
+        url: "https://s/a",
+        keywords: 2,
+        bestPosition: 2,
+      },
+      {
+        searchEngine: "yandex",
+        url: "https://s/c",
+        keywords: 1,
+        bestPosition: 3,
+      },
+    ]);
   });
 });
 
