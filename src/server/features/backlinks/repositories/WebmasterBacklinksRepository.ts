@@ -3,7 +3,7 @@ import { reverse } from "remeda";
 import { db } from "@/db";
 import { webmasterBacklinkSamples, webmasterBacklinkSnapshots } from "@/db/schema";
 
-export type WebmasterBacklinkSource = "yandex_webmaster";
+type WebmasterBacklinkSource = "yandex_webmaster";
 
 /** Upsert one dated count per history point. Re-collecting the same date
  *  refreshes the count and bumps capturedAt (the staleness marker). */

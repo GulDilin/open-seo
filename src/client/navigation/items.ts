@@ -4,6 +4,7 @@ import {
   Brain,
   ChartLine,
   ClipboardCheck,
+  FileSearch,
   FileText,
   Globe,
   LayoutDashboard,
@@ -53,6 +54,11 @@ const projectNavItems = [
     to: "/p/$projectId/backlinks" as const,
     label: "Backlinks",
     icon: Link2,
+  },
+  {
+    to: "/p/$projectId/index-status" as const,
+    label: "Index Status",
+    icon: FileSearch,
   },
   {
     to: "/p/$projectId/audit" as const,
@@ -146,6 +152,7 @@ export function getProjectNavGroups(projectId: string) {
         byPath("/p/$projectId/search-performance"),
         byPath("/p/$projectId/rank-tracking"),
         byPath("/p/$projectId/saved"),
+        byPath("/p/$projectId/index-status"),
         byPath("/p/$projectId/audit"),
       ],
     },

@@ -529,6 +529,107 @@ export const webmasterBacklinkSamples = sqliteTable(
   ],
 );
 
+// Index-status tracking: one row per (project, page URL) discovered by any
+// connected source. The page universe is the union of GSC search analytics,
+// Yandex Webmaster samples, and audited pages; per-engine verdicts live in
+// index_status_checks and discovery sources in index_status_page_sources.
+export const indexStatusPages = sqliteTable(
+  "index_status_pages",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    firstSeenAt: text("first_seen_at").notNull(),
+    lastSeenAt: text("last_seen_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("index_status_pages_url_unique").on(
+      table.projectId,
+      table.url,
+    ),
+  ],
+);
+
+// Which source(s) discovered a page. Multi-valued on purpose — one page can be
+// known to GSC, Yandex, and the site audit at once.
+export const indexStatusPageSources = sqliteTable(
+  "index_status_page_sources",
+  {
+    id: text("id").primaryKey(),
+    pageId: text("page_id")
+      .notNull()
+      .references(() => indexStatusPages.id, { onDelete: "cascade" }),
+    source: text("source", {
+      enum: ["gsc_search", "yandex_samples", "audit_crawl"],
+    }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("index_status_page_sources_unique").on(
+      table.pageId,
+      table.source,
+    ),
+  ],
+);
+
+// Latest per-engine indexation verdict for a page. NO row for an engine means
+// "no data" — rendered as unknown, never as "not indexed".
+// status: indexed | not_indexed | likely_indexed (GSC-impressions heuristic).
+// reason: why a page is absent (Google coverageState or Yandex excluded-page
+//   status text); null when indexed.
+// evidence: what produced the verdict — url_inspection | gsc_impressions |
+//   yandex_in_search | yandex_event.
+export const indexStatusChecks = sqliteTable(
+  "index_status_checks",
+  {
+    id: text("id").primaryKey(),
+    pageId: text("page_id")
+      .notNull()
+      .references(() => indexStatusPages.id, { onDelete: "cascade" }),
+    engine: text("engine", { enum: ["google", "yandex"] }).notNull(),
+    status: text("status", {
+      enum: ["indexed", "not_indexed", "likely_indexed"],
+    }).notNull(),
+    reason: text("reason"),
+    evidence: text("evidence", {
+      enum: [
+        "url_inspection",
+        "gsc_impressions",
+        "yandex_in_search",
+        "yandex_event",
+      ],
+    }).notNull(),
+    checkedAt: text("checked_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("index_status_checks_unique").on(table.pageId, table.engine),
+  ],
+);
+
+// Per-collector marker for the Index Status page: when its last collect wrote,
+// even when it wrote nothing (new property, host not indexed) — distinguishes
+// "collected, empty" from "never collected" so reads don't re-hit the APIs.
+export const indexStatusRuns = sqliteTable(
+  "index_status_runs",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    collector: text("collector", {
+      enum: ["google", "yandex", "audit"],
+    }).notNull(),
+    collectedAt: text("collected_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("index_status_runs_unique").on(
+      table.projectId,
+      table.collector,
+    ),
+  ],
+);
+
 // Personal checklist preferences; completion remains derived from product state.
 export const dashboardStepDismissals = sqliteTable(
   "dashboard_step_dismissals",

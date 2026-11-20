@@ -463,6 +463,13 @@
       "when": 1795110828612,
       "tag": "0065_lethal_miss_america",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "6",
+      "when": 1795112960959,
+      "tag": "0066_mighty_marvel_boy",
+      "breakpoints": true
     }
   ]
 }
