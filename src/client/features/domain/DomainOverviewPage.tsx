@@ -30,6 +30,7 @@ import { DomainSearchCard } from "@/client/features/domain/components/DomainSear
 import { KeywordsTab } from "@/client/features/domain/components/KeywordsTab";
 import { PagesTab } from "@/client/features/domain/components/PagesTab";
 import { ProjectDomainRatingCard } from "@/client/features/domain/components/ProjectDomainRatingCard";
+import { ProjectSqiCard } from "@/client/features/domain/components/ProjectSqiCard";
 import { HelpLabel } from "@/client/components/HelpLabel";
 import { MetricsTable } from "@/client/components/MetricsTable";
 import { SearchTabStrip } from "@/client/features/search-tabs/SearchTabStrip";
@@ -670,6 +671,7 @@ export function DomainOverviewPage({
                     />
                   </div>
                   <ProjectDomainRatingCard projectId={projectId} />
+                  <ProjectSqiCard projectId={projectId} />
                 </div>
               </div>
 
