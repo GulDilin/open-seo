@@ -141,7 +141,11 @@ export function DomainTrackerSummarySection({
         {(data) => (
           <div className="space-y-3">
             {data.engines.map((engine) => (
-              <EngineBlock key={engine.searchEngine} engine={engine} />
+              <EngineBlock
+                key={engine.searchEngine}
+                engine={engine}
+                device={device}
+              />
             ))}
           </div>
         )}
@@ -150,7 +154,13 @@ export function DomainTrackerSummarySection({
   );
 }
 
-function EngineBlock({ engine }: { engine: DomainTrackerEngineSummary }) {
+function EngineBlock({
+  engine,
+  device,
+}: {
+  engine: DomainTrackerEngineSummary;
+  device: "desktop" | "mobile";
+}) {
   const hasSnapshots = engine.trend.length > 0 || engine.summary.total > 0;
 
   return (
@@ -170,8 +180,8 @@ function EngineBlock({ engine }: { engine: DomainTrackerEngineSummary }) {
         <EmptyState
           icon={TrendingUp}
           size="sm"
-          title="First check hasn't finished yet"
-          description="Positions appear here after the tracker's first run completes."
+          title={`No ${device} positions yet`}
+          description="Positions appear here once the tracker completes a check on this device."
         />
       )}
     </div>

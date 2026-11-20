@@ -447,14 +447,11 @@ async function getKeywordCountsForConfigs(configIds: string[]) {
   return counts;
 }
 
-/** Engines (with their device coverage) of the project's ACTIVE trackers on
- *  the given domain — the domain overview's per-engine block list. */
+/** Engines of the project's ACTIVE trackers on the given domain — the
+ *  domain overview's per-engine block list. */
 async function getDomainTrackerEngines(projectId: string, domain: string) {
   return db
-    .select({
-      searchEngine: rankTrackingConfigs.searchEngine,
-      devices: rankTrackingConfigs.devices,
-    })
+    .select({ searchEngine: rankTrackingConfigs.searchEngine })
     .from(rankTrackingConfigs)
     .where(
       and(
