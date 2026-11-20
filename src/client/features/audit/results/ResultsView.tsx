@@ -143,6 +143,8 @@ export function ResultsView({
         totalLighthouse={lighthouse.length}
         averageResponseMs={stats.averageResponseMs}
         lighthouseSummary={stats.lighthouseSummary}
+        checkedPages={stats.checkedPages}
+        eligiblePages={stats.eligiblePages}
       />
 
       {activeTab === "issues" && <IssuesView issues={issues} tabs={tabs} />}
@@ -161,6 +163,8 @@ export function ResultsView({
           lighthouse={lighthouse}
           pages={pages}
           tabs={tabs}
+          checkedPages={stats.checkedPages}
+          eligiblePages={stats.eligiblePages}
         />
       )}
     </>
@@ -208,7 +212,25 @@ function useResultStats(
     };
   }, [lighthouse]);
 
-  return { averageResponseMs, lighthouseSummary };
+  // Mirrors the server's sample eligibility (2xx + ok) so the report can say
+  // what share of the crawl the performance checks covered.
+  const checkedPages = useMemo(
+    () => new Set(lighthouse.map((row) => row.pageId)).size,
+    [lighthouse],
+  );
+  const eligiblePages = useMemo(
+    () =>
+      pages.filter(
+        (page) =>
+          page.statusCode != null &&
+          page.statusCode >= 200 &&
+          page.statusCode < 300 &&
+          page.fetchClass === "ok",
+      ).length,
+    [pages],
+  );
+
+  return { averageResponseMs, lighthouseSummary, checkedPages, eligiblePages };
 }
 
 function ResultsHeader({
@@ -274,6 +296,8 @@ function StatsStrip({
   totalLighthouse,
   averageResponseMs,
   lighthouseSummary,
+  checkedPages,
+  eligiblePages,
 }: {
   pagesCrawled: number;
   issues: AuditResultsData["issues"];
@@ -285,6 +309,8 @@ function StatsStrip({
     avgSeo: number | null;
     avgAccessibility: number | null;
   };
+  checkedPages: number;
+  eligiblePages: number;
 }) {
   const severityCounts = useMemo(() => {
     const counts = { critical: 0, warning: 0, info: 0 };
@@ -326,7 +352,15 @@ function StatsStrip({
 
   if (totalLighthouse > 0) {
     items.push(
-      { label: "Lighthouse tests", value: String(totalLighthouse) },
+      {
+        label: "Lighthouse tests",
+        value: String(totalLighthouse),
+        sub: (
+          <span className="text-xs text-muted-foreground">
+            {checkedPages} of {eligiblePages} pages
+          </span>
+        ),
+      },
       {
         label: "Lighthouse performance",
         value:

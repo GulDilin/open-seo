@@ -4,6 +4,7 @@ import { discoverUrls, parseRobotsTxt } from "@/server/lib/audit/discovery";
 import {
   failedLighthouseFetch,
   fetchLighthouseResult,
+  resolveLighthouseSampleLimit,
   selectLighthouseSample,
   storeLighthouseResult,
 } from "@/server/lib/audit/lighthouse";
@@ -17,7 +18,6 @@ import { AuditRepository } from "@/server/features/audit/repositories/AuditRepos
 import { getAuditScratchpad } from "@/server/features/audit/AuditScratchpad";
 import { AuditProgressKV } from "@/server/lib/audit/progress-kv";
 import { runMultipageChecks } from "@/server/lib/audit/issues/multipage";
-import type { DetectedIssue } from "@/server/lib/audit/issues/page-reporters";
 import type { AuditConfig } from "@/server/lib/audit/types";
 import type { CrawlerAccess } from "@/shared/crawler-access";
 import type { RenderUsage } from "@/shared/audit-rendering";
@@ -26,6 +26,10 @@ import {
   runCrawlPhase,
   type CrawlPhaseResult,
 } from "@/server/workflows/siteAuditWorkflowCrawl";
+import {
+  runExternalLinksPhase,
+  runScratchpadLinkChecks,
+} from "@/server/workflows/siteAuditWorkflowLinkChecks";
 import { pgStep } from "@/server/workflows/pgStep";
 import {
   DB_STEP,
@@ -92,6 +96,7 @@ export async function runAuditPhases(
     renderJavaScript: config.renderJavaScript,
     sitePlatform: config.sitePlatform,
   });
+  await runExternalLinksPhase(step, auditId);
   await runLighthousePhase(step, {
     auditId,
     workflowInstanceId,
@@ -297,6 +302,7 @@ async function selectLighthousePages(params: {
       })),
       startUrl,
       strategy,
+      await resolveLighthouseSampleLimit(),
     );
     const selectedUrls = new Set(sample);
 
@@ -418,43 +424,4 @@ async function finalizeAudit(args: {
     // Crawl scratch state (frontier, links, mirror) is no longer needed.
     await getAuditScratchpad(auditId).destroy();
   });
-}
-
-/**
- * The two finalize checks that need link edges run as SQL inside the
- * audit's scratchpad DO; map their rows onto DetectedIssue.
- */
-async function runScratchpadLinkChecks(
-  auditId: string,
-  startUrl: string,
-  crawl: CrawlPhaseResult,
-): Promise<DetectedIssue[]> {
-  const scratchpad = getAuditScratchpad(auditId);
-  const { brokenLinks, orphanPages } = await scratchpad.runFinalizeChecks({
-    // Page rows store normalized URLs; normalize the start URL the same way
-    // so the orphan exclusion matches.
-    startUrl: normalizeUrl(startUrl) ?? startUrl,
-    // Orphan detection only makes sense when the crawl wasn't truncated.
-    crawlCompleted: crawl.completed,
-  });
-
-  return [
-    ...brokenLinks.map((row) => ({
-      issueType: "broken-internal-link" as const,
-      pageId: row.sourcePageId,
-      pageUrl: row.sourceUrl,
-      dedupeKey: row.targetUrl,
-      // Status 0 is the crawl's network-failure marker (timeout/DNS): show
-      // the reason, not a bare zero.
-      details: {
-        targetUrl: row.targetUrl,
-        targetStatus: row.targetStatus === 0 ? "unreachable" : row.targetStatus,
-      },
-    })),
-    ...orphanPages.map((row) => ({
-      issueType: "orphan-page" as const,
-      pageId: row.pageId,
-      pageUrl: row.url,
-    })),
-  ];
 }

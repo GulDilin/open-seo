@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   BROKEN_LINKS_SQL,
+  EXTERNAL_LINKS_SQL,
   FRONTIER_DISCOVER_SQL,
   ORPHAN_PAGES_SQL,
   SCRATCHPAD_SCHEMA_SQL,
@@ -152,6 +153,56 @@ describe("broken internal links", () => {
       "https://site.test/gone-0",
       "https://site.test/gone-1",
     ]);
+  });
+});
+
+describe("external links", () => {
+  function addExternalLinks(pageId: string, url: string, targets: string[]) {
+    db.prepare(
+      `INSERT OR REPLACE INTO external_links (page_id, url, targets_json) VALUES (?, ?, ?)`,
+    ).run(pageId, url, JSON.stringify(targets));
+  }
+
+  function externalLinks(limit = 100) {
+    return db.prepare(EXTERNAL_LINKS_SQL).all(limit);
+  }
+
+  it("expands each page's stored targets into one edge row per target", () => {
+    addExternalLinks("p1", START, [
+      "https://other.test/gone",
+      "https://other.test/fine",
+    ]);
+    addExternalLinks("p2", "https://site.test/post", [
+      "https://other.test/gone",
+    ]);
+
+    expect(externalLinks()).toEqual([
+      {
+        source_page_id: "p1",
+        source_url: START,
+        target_url: "https://other.test/fine",
+      },
+      {
+        source_page_id: "p1",
+        source_url: START,
+        target_url: "https://other.test/gone",
+      },
+      {
+        source_page_id: "p2",
+        source_url: "https://site.test/post",
+        target_url: "https://other.test/gone",
+      },
+    ]);
+  });
+
+  it("respects the row limit", () => {
+    addExternalLinks(
+      "p1",
+      START,
+      Array.from({ length: 5 }, (_, i) => `https://other.test/link-${i}`),
+    );
+
+    expect(externalLinks(2)).toHaveLength(2);
   });
 });
 

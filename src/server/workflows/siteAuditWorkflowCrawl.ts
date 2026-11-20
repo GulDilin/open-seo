@@ -6,6 +6,7 @@ import { isSameOrigin } from "@/server/lib/audit/url-utils";
 import { isCrawlableUrl } from "@/server/lib/audit/url-policy";
 import { deterministicAuditRowId } from "@/server/lib/audit/ids";
 import { runPageReporters } from "@/server/lib/audit/issues/page-reporters";
+import { externalLinkTargets } from "@/server/lib/audit/issues/external-links";
 import { AuditRepository } from "@/server/features/audit/repositories/AuditRepository";
 import {
   getAuditScratchpad,
@@ -424,12 +425,14 @@ async function persistCrawledPages(input: {
   await AuditRepository.insertCrawledBatch(auditId, pages, issues);
 
   const links: ScratchpadPageLinksRow[] = [];
+  const externalLinks: ScratchpadPageLinksRow[] = [];
   const discovered = new Map<string, number | null>();
   for (const page of pages) {
     const pageDepth = depthByUrl.get(page.url) ?? null;
     const childDepth = pageDepth === null ? null : pageDepth + 1;
 
     const targets: string[] = [];
+    const external = externalLinkTargets(page.links);
     for (const link of page.links) {
       if (!link.isInternal) continue;
       if (targets.length < MAX_STORED_LINKS_PER_PAGE) {
@@ -445,6 +448,9 @@ async function persistCrawledPages(input: {
     }
     if (targets.length > 0) {
       links.push({ pageId: page.id, url: page.url, targets });
+    }
+    if (external.length > 0) {
+      externalLinks.push({ pageId: page.id, url: page.url, targets: external });
     }
 
     // Redirect targets continue the same navigation path: same depth.
@@ -467,6 +473,7 @@ async function persistCrawledPages(input: {
       redirectUrl: page.redirectUrl,
     })),
     links,
+    externalLinks,
     discovered: Array.from(discovered, ([url, depth]) => ({ url, depth })),
   });
 

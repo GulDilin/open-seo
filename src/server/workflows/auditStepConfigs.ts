@@ -62,3 +62,13 @@ export const MULTIPAGE_CHECKS_STEP: WorkflowStepConfig = {
   retries: { limit: 2, delay: "5 seconds", backoff: "exponential" },
   timeout: "5 minutes",
 };
+
+/**
+ * Probing recorded external link targets: up to 200 GETs, 10s timeout each,
+ * 10 in flight — comfortably inside the timeout even when every probe hangs.
+ * Free and idempotent, so replays are safe.
+ */
+export const EXTERNAL_LINKS_STEP: WorkflowStepConfig = {
+  retries: { limit: 1, delay: "5 seconds", backoff: "constant" },
+  timeout: "5 minutes",
+};

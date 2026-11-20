@@ -4,13 +4,18 @@ vi.mock("@/server/lib/r2", () => ({
   putTextToR2: vi.fn(),
 }));
 
-import { fetchLighthouseResult, selectLighthouseSample } from "./lighthouse";
+import {
+  fetchLighthouseResult,
+  resolveLighthouseSampleLimit,
+  selectLighthouseSample,
+} from "./lighthouse";
 import { storedLighthousePayloadSchema } from "@/server/lib/lighthouseStoredPayload";
 
-const okPage = (url: string) => ({
+const okPage = (url: string, crawlDepth?: number | null) => ({
   url,
   statusCode: 200,
   fetchClass: "ok" as const,
+  ...(crawlDepth !== undefined ? { crawlDepth } : {}),
 });
 
 describe("selectLighthouseSample", () => {
@@ -22,6 +27,7 @@ describe("selectLighthouseSample", () => {
       ],
       "https://example.com/",
       "auto",
+      10,
     );
 
     expect(selected).toEqual(["https://example.com/about"]);
@@ -39,6 +45,7 @@ describe("selectLighthouseSample", () => {
       pages,
       "https://example.com/services",
       "auto",
+      10,
     );
 
     expect(selected).toHaveLength(10);
@@ -53,12 +60,13 @@ describe("selectLighthouseSample", () => {
       ],
       "https://example.com/services",
       "auto",
+      10,
     );
 
     expect(selected[0]).toBe("https://example.com/services");
   });
 
-  it("does not sample another page from the start page's template", () => {
+  it("covers every template first, then fills with same-template pages", () => {
     const selected = selectLighthouseSample(
       [
         okPage("https://example.com/products/123"),
@@ -67,12 +75,95 @@ describe("selectLighthouseSample", () => {
       ],
       "https://example.com/products/123",
       "auto",
+      3,
     );
 
+    // products/456 only enters once every template is covered and budget
+    // remains — template diversity leads, depth fills.
     expect(selected).toEqual([
       "https://example.com/products/123",
       "https://example.com/about",
+      "https://example.com/products/456",
     ]);
+  });
+
+  it("fills the remaining budget with the shallowest pages", () => {
+    const selected = selectLighthouseSample(
+      [
+        okPage("https://example.com/", 0),
+        okPage("https://example.com/products/123", 1),
+        okPage("https://example.com/about", 1),
+        okPage("https://example.com/products/456", 3),
+        okPage("https://example.com/contact", 2),
+      ],
+      "https://example.com/",
+      "auto",
+      4,
+    );
+
+    // Homepage + one per template fills 2 of 4; the budget completes with
+    // the shallowest leftovers (contact, depth 2) before the deeper product.
+    expect(selected).toEqual([
+      "https://example.com/",
+      "https://example.com/products/123",
+      "https://example.com/about",
+      "https://example.com/contact",
+    ]);
+  });
+
+  it("fills by click depth, ranking sitemap-only pages deepest", () => {
+    // All three subpages share the /:slug template, so only the first is
+    // template-selected; the rest compete in the depth fill.
+    const selected = selectLighthouseSample(
+      [
+        okPage("https://example.com/", 0),
+        okPage("https://example.com/contact-us-page", 9),
+        okPage("https://example.com/about-us-page", null),
+        okPage("https://example.com/pricing-plans-page", 3),
+      ],
+      "https://example.com/",
+      "auto",
+      4,
+    );
+
+    expect(selected).toEqual([
+      "https://example.com/",
+      "https://example.com/contact-us-page",
+      "https://example.com/pricing-plans-page",
+      "https://example.com/about-us-page",
+    ]);
+  });
+
+  it("caps the sample at maxPages however many templates crawled", () => {
+    const pages = Array.from({ length: 30 }, (_, index) =>
+      okPage(`https://example.com/section${index}`, index),
+    );
+
+    expect(
+      selectLighthouseSample(pages, "https://example.com/", "auto", 7),
+    ).toHaveLength(7);
+  });
+});
+
+describe("resolveLighthouseSampleLimit", () => {
+  it("defaults to the conservative keyless sample without a key", async () => {
+    await expect(resolveLighthouseSampleLimit()).resolves.toBe(10);
+  });
+
+  it("defaults to a larger sample when the deployment has its own key", async () => {
+    vi.stubEnv("PAGESPEED_API_KEY", "test-pagespeed-key");
+    await expect(resolveLighthouseSampleLimit()).resolves.toBe(50);
+    vi.unstubAllEnvs();
+  });
+
+  it("honours PAGESPEED_MAX_PAGES over both defaults, clamped to the ceiling", async () => {
+    vi.stubEnv("PAGESPEED_MAX_PAGES", "100");
+    await expect(resolveLighthouseSampleLimit()).resolves.toBe(100);
+    vi.stubEnv("PAGESPEED_MAX_PAGES", "9999");
+    await expect(resolveLighthouseSampleLimit()).resolves.toBe(250);
+    vi.stubEnv("PAGESPEED_MAX_PAGES", "not-a-number");
+    await expect(resolveLighthouseSampleLimit()).resolves.toBe(10);
+    vi.unstubAllEnvs();
   });
 });
 

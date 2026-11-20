@@ -37,12 +37,17 @@ export function PerformanceTable({
   lighthouse,
   pages,
   tabs,
+  checkedPages,
+  eligiblePages,
 }: {
   auditId: string;
   projectId: string;
   lighthouse: AuditResultsData["lighthouse"];
   pages: AuditResultsData["pages"];
   tabs: ReactNode;
+  /** Distinct pages Lighthouse ran on, and the 2xx+ok pages it could sample. */
+  checkedPages: number;
+  eligiblePages: number;
 }) {
   const [filters, setFilters] = useState<PerformanceFilters>(
     EMPTY_PERFORMANCE_FILTERS,
@@ -95,6 +100,11 @@ export function PerformanceTable({
       toolbar={
         <>
           {tabs}
+          <p className="px-4 pb-2 text-xs text-muted-foreground">
+            {checkedPages >= eligiblePages
+              ? `Lighthouse checked all ${eligiblePages} eligible pages (mobile and desktop each).`
+              : `Lighthouse checked ${checkedPages} of ${eligiblePages} eligible pages — sampled homepage-first, one page per URL template, then the shallowest pages. Self-hosted operators can raise the limit with PAGESPEED_MAX_PAGES.`}
+          </p>
           <ResultsTableToolbar
             showFilters={showFilters}
             onToggle={() => setShowFilters((current) => !current)}
