@@ -11,6 +11,10 @@ import { serperProvider } from "./serper/adapter";
 import { yandexProvider } from "./yandex/adapter";
 import { brightDataProvider } from "./brightdata/adapter";
 
+/** City-level google needs sub-country geo only the incumbent serves
+ *  (decisions §5): serper is never consulted, even when configured. */
+const CITY_GOOGLE_CHAIN: readonly ProviderId[] = ["dataforseo"];
+
 /**
  * Walk the engine's provider chain and return the first configured provider.
  * Never substitutes engines: a request for an engine with no configured
@@ -18,21 +22,24 @@ import { brightDataProvider } from "./brightdata/adapter";
  */
 export async function resolveSerpProvider(
   engine: SearchEngine,
+  options?: { cityLevel?: boolean },
 ): Promise<ProviderId> {
+  const chain =
+    options?.cityLevel && engine === "google"
+      ? CITY_GOOGLE_CHAIN
+      : SERP_PROVIDER_CHAIN[engine];
   const statuses = await getSeoProviderStatuses();
-  for (const id of SERP_PROVIDER_CHAIN[engine]) {
+  for (const id of chain) {
     if (statuses[id]) {
       return id;
     }
   }
   const missing = [
-    ...new Set(
-      SERP_PROVIDER_CHAIN[engine].flatMap((id) => SEO_PROVIDER_CREDENTIALS[id]),
-    ),
+    ...new Set(chain.flatMap((id) => SEO_PROVIDER_CREDENTIALS[id])),
   ].join(", ");
   throw new AppError(
     "UPSTREAM_UNAVAILABLE",
-    `No SERP provider configured for engine "${engine}". Set one of: ${missing}.`,
+    `No SERP provider configured for engine "${engine}"${options?.cityLevel ? " with city-level targeting" : ""}. Set one of: ${missing}.`,
   );
 }
 

@@ -43,6 +43,27 @@ describe("resolveSerpProvider", () => {
     await expect(resolveSerpProvider("yandex")).resolves.toBe("yandex");
   });
 
+  it("keeps city-level google on the incumbent even with serper", async () => {
+    vi.stubEnv("SERPER_API_KEY", "test-key");
+    vi.stubEnv("DATAFORSEO_API_KEY", "dfs-key");
+    await expect(
+      resolveSerpProvider("google", { cityLevel: true }),
+    ).resolves.toBe("dataforseo");
+  });
+
+  it("names DATAFORSEO_API_KEY for city-level google without the incumbent", async () => {
+    vi.stubEnv("SERPER_API_KEY", "test-key");
+    await expect(
+      resolveSerpProvider("google", { cityLevel: true }),
+    ).rejects.toSatisfy(
+      (error) =>
+        error instanceof AppError &&
+        error.code === "UPSTREAM_UNAVAILABLE" &&
+        error.message.includes("city-level") &&
+        error.message.includes("DATAFORSEO_API_KEY"),
+    );
+  });
+
   it("names bright data for uncovered engines", async () => {
     await expect(resolveSerpProvider("baidu")).rejects.toSatisfy(
       (error) =>
