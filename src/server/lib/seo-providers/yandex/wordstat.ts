@@ -3,6 +3,7 @@ import type {
   KeywordVolumeQuery,
   KeywordVolumeRow,
 } from "@/server/lib/seo-providers/types";
+import { AppError } from "@/server/lib/errors";
 import { wordstatTopRequests } from "./client";
 
 // Sequential chunks of 25: Yandex RPS quotas and the Workers subrequest
@@ -49,16 +50,50 @@ async function wordstatVolume(
   // auto-imported panel queries can exceed the UI's keyword-length cap —
   // return an honest null instead of failing the whole refresh.
   if (query.keyword.length > 400) return null;
+  // A phrase with no letters or digits (operator/punctuation-only) can never
+  // match Wordstat's grammar — skip it without a round-trip.
+  if (!/[\p{L}\p{N}]/u.test(query.keyword)) return null;
   // Regions on the volume query are Yandex region ids (numeric strings). A
   // non-numeric region (e.g. a DataForSEO city label) is not an id — drop it
   // rather than send Wordstat a name it would reject or mis-scope.
   const regionId = query.region?.match(/^\d+$/)?.[0];
-  const top = await wordstatTopRequests({
-    phrase: query.keyword,
-    regions: regionId ? [regionId] : undefined,
-  });
+  let top;
+  try {
+    top = await wordstatTopRequests({
+      phrase: query.keyword,
+      regions: regionId ? [regionId] : undefined,
+    });
+  } catch (error) {
+    // A 4xx is this phrase's problem, not the batch's: auto-imported panel
+    // queries can carry Search-API-invalid syntax (e.g. an unbalanced quote),
+    // and Yandex answers 400 "Invalid query". Null the volume, name the
+    // phrase in the logs, let sibling keywords proceed. Anything else (auth,
+    // throttle, 5xx) is infrastructure — rethrow so the refresh retries.
+    if (isPerPhraseRejection(error)) {
+      console.warn(
+        `[wordstat] invalid phrase, volume nulled: ${JSON.stringify(query.keyword.slice(0, 80))}`,
+      );
+      return null;
+    }
+    throw error;
+  }
   const exact = top.results.find(
     (row) => row.phrase.toLowerCase() === query.keyword.toLowerCase(),
   );
   return exact ? Number(exact.count) : null;
+}
+
+function isPerPhraseRejection(error: unknown): boolean {
+  // Provider error contract: 4xx is permanent (this phrase is unfixable),
+  // except 429 which is throttle like 5xx — those rethrow and retry.
+  if (!(error instanceof AppError) || error.code !== "UPSTREAM_UNAVAILABLE") {
+    return false;
+  }
+  const status = error.details?.providerStatus;
+  return (
+    error.details?.provider === "yandex" &&
+    status !== undefined &&
+    status !== "429" &&
+    status.startsWith("4")
+  );
 }

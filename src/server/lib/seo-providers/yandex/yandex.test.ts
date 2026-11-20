@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseYandexDocs, parseYandexError } from "./xml";
 import { yandexProvider } from "./adapter";
 import { wordstatProvider } from "./wordstat";
+import { AppError } from "@/server/lib/errors";
 import type { SerpRankCheck } from "@/server/lib/seo-providers/types";
 
 const mocks = vi.hoisted(() => ({
@@ -181,5 +182,52 @@ describe("wordstatProvider.getVolumes", () => {
       2,
       expect.objectContaining({ regions: undefined }),
     );
+  });
+
+  it("nulls one phrase's 400 invalid-query without failing the batch", async () => {
+    // Auto-imported panel queries can carry Search-API-invalid syntax (e.g.
+    // an unbalanced quote); Yandex answers 400 "Invalid query" for them.
+    mocks.wordstatTopRequests.mockRejectedValueOnce(
+      new AppError("UPSTREAM_UNAVAILABLE", "Yandex Search API responded 400", {
+        provider: "yandex",
+        providerStatus: "400",
+        providerPath: "/v2/wordstat/topRequests",
+        responseBody: "Invalid query (code 3)",
+      }),
+    );
+
+    const rows = await wordstatProvider.getVolumes([
+      { keyword: 'что такое "seo', country: "ru", language: "ru" },
+      { keyword: "кроссовки купить", country: "ru", language: "ru" },
+    ]);
+
+    expect(rows[0].volume).toBeNull();
+    expect(rows[1].volume).toBe(5400);
+  });
+
+  it("rethrows non-4xx failures so the refresh retries", async () => {
+    mocks.wordstatTopRequests.mockRejectedValue(
+      new AppError("UPSTREAM_UNAVAILABLE", "Yandex Search API responded 429", {
+        provider: "yandex",
+        providerStatus: "429",
+        providerPath: "/v2/wordstat/topRequests",
+        responseBody: "quota",
+      }),
+    );
+
+    await expect(
+      wordstatProvider.getVolumes([
+        { keyword: "кроссовки", country: "ru", language: "ru" },
+      ]),
+    ).rejects.toMatchObject({ code: "UPSTREAM_UNAVAILABLE" });
+  });
+
+  it("skips letterless phrases without a round-trip", async () => {
+    const rows = await wordstatProvider.getVolumes([
+      { keyword: '   "-" ', country: "ru", language: "ru" },
+    ]);
+
+    expect(rows[0].volume).toBeNull();
+    expect(mocks.wordstatTopRequests).not.toHaveBeenCalled();
   });
 });
