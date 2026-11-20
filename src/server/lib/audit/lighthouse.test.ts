@@ -218,8 +218,19 @@ describe("fetchLighthouseResult (PSI)", () => {
     vi.unstubAllGlobals();
   });
 
-  it("names the 429 after exhausting the retry instead of calling it a timeout", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(psiResponse({}, 429));
+  it("names the 429 quota cause and remedy after exhausting the retry", async () => {
+    const quotaBody = {
+      error: {
+        code: 429,
+        message:
+          "Quota exceeded for quota metric 'Queries' and limit 'Queries per day'",
+      },
+    };
+    // A fresh Response per call: the first attempt consumes the body, and a
+    // reused Response would hide the quota message on the retry.
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(psiResponse(quotaBody, 429)));
     vi.stubGlobal("fetch", fetchMock);
 
     const fetched = await fetchLighthouseResult(
@@ -229,8 +240,36 @@ describe("fetchLighthouseResult (PSI)", () => {
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetched.result.errorMessage).toContain("429");
+    // The audit UI shows this string: it must carry PSI's own reason and the
+    // key hint, not just the status code.
+    expect(fetched.result.errorMessage).toContain("PSI responded 429");
+    expect(fetched.result.errorMessage).toContain("Quota exceeded");
+    expect(fetched.result.errorMessage).toContain("PAGESPEED_API_KEY");
     vi.unstubAllGlobals();
+  });
+
+  it("sends PAGESPEED_API_KEY when set and drops the keyless quota hint", async () => {
+    vi.stubEnv("PAGESPEED_API_KEY", "test-pagespeed-key");
+    const quotaBody = {
+      error: { code: 429, message: "Quota exceeded for 'Queries per day'" },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(psiResponse(quotaBody, 429)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const fetched = await fetchLighthouseResult(
+      "https://example.com/",
+      "page-1",
+      "mobile",
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][0]).toContain("key=test-pagespeed-key");
+    expect(fetched.result.errorMessage).toContain("Quota exceeded");
+    expect(fetched.result.errorMessage).not.toContain("PAGESPEED_API_KEY");
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("records the failure without retrying a hard 400", async () => {

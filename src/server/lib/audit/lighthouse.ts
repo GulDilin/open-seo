@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AppError } from "@/server/lib/errors";
+import { getOptionalEnvValue } from "@/server/lib/runtime-env";
 import { detectUrlTemplate, canonicalUrlKey } from "./url-utils";
 import type { LighthouseResult, LighthouseStrategy } from "./types";
 import type { PageFetchClass } from "@/shared/audit-fetch-class";
@@ -62,8 +63,9 @@ export function failedLighthouseFetch(
  * the hood the incumbent resold (decisions §7). One request per page; a
  * failure isolates to its page and the audit continues.
  *
- * ponytail: keyless PSI is generous per IP; add PAGESPEED_API_KEY env only
- * if a real audit ever hits the free ceiling.
+ * Keyless requests draw from one shared public quota that is routinely
+ * exhausted (429 RESOURCE_EXHAUSTED on every call); PAGESPEED_API_KEY gives
+ * the deployment its own quota.
  */
 const PSI_ENDPOINT =
   "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
@@ -107,9 +109,28 @@ async function psiLighthouse(
   const categories = ["performance", "accessibility", "best-practices", "seo"];
   const params = new URLSearchParams({ url, strategy });
   for (const category of categories) params.append("category", category);
+  const apiKey = await getOptionalEnvValue("PAGESPEED_API_KEY");
+  if (apiKey) params.set("key", apiKey);
   return fetch(`${PSI_ENDPOINT}?${params.toString()}`, {
     signal: AbortSignal.timeout(60_000),
   });
+}
+
+const psiErrorBodySchema = z.object({
+  error: z.object({ message: z.string().optional() }).optional(),
+});
+
+/**
+ * PSI's error bodies name the actual failure (which quota tripped, which
+ * parameter is wrong) — surface that next to the status instead of
+ * discarding it. A non-JSON body falls back to the status line.
+ */
+async function psiFailureMessage(response: Response): Promise<string> {
+  const status = `PSI responded ${response.status}`;
+  const body: unknown = await response.json().catch(() => null);
+  const parsed = psiErrorBodySchema.safeParse(body);
+  const message = parsed.success ? parsed.data.error?.message : undefined;
+  return message ? `${status}: ${message}` : status;
 }
 
 export async function fetchLighthouseResult(
@@ -124,21 +145,30 @@ export async function fetchLighthouseResult(
     // error names the real last failure, not a generic "timeout".
     let response: Response | null = null;
     let lastFailure = "request failed";
+    let lastStatus: number | null = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         response = await psiLighthouse(url, strategy);
       } catch (error) {
         lastFailure = error instanceof Error ? error.message : "request failed";
+        lastStatus = null;
         continue;
       }
       if (response.ok) break;
-      lastFailure = `PSI responded ${response.status}`;
+      lastStatus = response.status;
+      lastFailure = await psiFailureMessage(response);
       // Hard failures (4xx, other 5xx-classes) are not retried.
       if (response.status !== 429 && response.status < 500) break;
       response = null;
     }
     if (!response || !response.ok) {
-      throw new AppError("UPSTREAM_UNAVAILABLE", lastFailure);
+      // A keyless 429 means the shared public quota is dry. Name the fix so
+      // the audit UI shows an actionable cause instead of a bare status.
+      const quotaHint =
+        lastStatus === 429 && !(await getOptionalEnvValue("PAGESPEED_API_KEY"))
+          ? " Keyless PageSpeed Insights shares one public quota that is often exhausted; set PAGESPEED_API_KEY for a dedicated quota."
+          : "";
+      throw new AppError("UPSTREAM_UNAVAILABLE", lastFailure + quotaHint);
     }
     const parsed = psiResponseSchema.safeParse(await response.json());
     if (!parsed.success) {

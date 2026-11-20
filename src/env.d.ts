@@ -11,6 +11,10 @@ declare namespace Cloudflare {
     // Context.dev key: the rendering fallback when Browser Run fails or is
     // blocked, and the only renderer on Docker.
     CONTEXT_API_KEY?: string;
+    // Google PageSpeed Insights API key for audit Lighthouse checks. Keyless
+    // PSI draws from a shared public quota that is often exhausted (every
+    // check then fails with 429); a key gives the deployment its own quota.
+    PAGESPEED_API_KEY?: string;
     OAUTH_KV: KVNamespace;
 
     // Durable Object backing the SAM in-app agent (see wrangler.jsonc).
@@ -29,11 +33,7 @@ declare namespace Cloudflare {
     AUDIT_ENGINE: Service<typeof import("./audit-worker").default>;
 
     // Keep in sync with AUTH_MODES in src/lib/auth-mode.ts.
-    AUTH_MODE?:
-      | "cloudflare_access"
-      | "local_noauth"
-      | "hosted"
-      | "oauth";
+    AUTH_MODE?: "cloudflare_access" | "local_noauth" | "hosted" | "oauth";
     BYPASS_EMAIL_VERIFICATION?: string;
     TEAM_DOMAIN?: string;
     POLICY_AUD?: string;
