@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { PanelKeywordSuggestions } from "./panelKeywordSuggestions";
 import { GscService } from "@/server/features/gsc/services/GscService";
 import { YandexWebmasterService } from "@/server/features/yandex/services/YandexWebmasterService";
+import { sumYandexQueryTotals } from "@/server/features/yandex/yandexSearchQueries";
 import { RankTrackingRepository } from "@/server/features/rank-tracking/repositories/RankTrackingRepository";
 
 vi.mock("@/server/features/gsc/services/GscService", () => ({
@@ -60,25 +61,31 @@ const yandexPerformance = (
     clicks: number | null;
     avgShowPosition?: number | null;
   }>,
-) => ({
-  hostUrl: yandexConnection.hostUrl,
-  orderBy: "impressions" as const,
-  deviceType: "all" as const,
-  reportedDateFrom: "2026-09-28",
-  reportedDateTo: "2026-10-25",
-  totalCount: rows.length,
-  rows: rows.map((row, i) => ({
+) => {
+  const mapped = rows.map((row, i) => ({
     queryId: `q${i}`,
     query: row.query,
     impressions: row.impressions,
     clicks: row.clicks,
     avgShowPosition: row.avgShowPosition ?? null,
     avgClickPosition: null,
-  })),
-  summary: null,
-  summaryError: null,
-  indexingStatus: null,
-});
+  }));
+  return {
+    hostUrl: yandexConnection.hostUrl,
+    orderBy: "impressions" as const,
+    deviceType: "all" as const,
+    reportedDateFrom: "2026-09-28",
+    reportedDateTo: "2026-10-25",
+    totalCount: rows.length,
+    rows: mapped,
+    totals: sumYandexQueryTotals(mapped),
+    change: null,
+    changeError: null,
+    summary: null,
+    summaryError: null,
+    indexingStatus: null,
+  };
+};
 
 beforeEach(() => {
   vi.mocked(GscService.getConnection).mockResolvedValue(null);

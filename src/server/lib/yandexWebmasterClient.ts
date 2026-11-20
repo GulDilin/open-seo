@@ -177,7 +177,7 @@ export type YandexQueryRow = {
   avgClickPosition: number | null;
 };
 
-type YandexPopularQueries = {
+export type YandexPopularQueries = {
   rows: YandexQueryRow[];
   reportedDateFrom: string;
   reportedDateTo: string;
