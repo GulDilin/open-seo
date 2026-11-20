@@ -9,6 +9,7 @@ import {
 import type { AuditResultsData } from "@/client/features/audit/results/types";
 import { SeverityBadge } from "@/client/features/audit/shared";
 import { EmptyState } from "@/client/components/EmptyState";
+import { SafeExternalLink } from "@/client/components/SafeExternalLink";
 
 type AuditIssueRow = AuditResultsData["issues"][number];
 
@@ -196,23 +197,46 @@ function AffectedUrlList({ issues }: { issues: AuditIssueRow[] }) {
 
   return (
     <div className="max-h-[320px] overflow-y-auto rounded border border-border bg-card">
-      {rendered.map((issue) => (
-        <div
-          key={issue.id}
-          className="px-3 py-1.5 text-sm flex flex-col gap-0.5 border-b border-border last:border-b-0"
-        >
-          <a
-            className="text-foreground/80 truncate hover:underline"
-            href={issue.pageUrl}
-            target="_blank"
-            rel="noreferrer"
-            title={issue.pageUrl}
+      {rendered.map((issue) => {
+        const details = issue.detailsJson
+          ? parseDetails(issue.detailsJson)
+          : null;
+        // The broken-link target is the thing to find and fix — render it as
+        // its own link line instead of ellipsizing it inside the muted
+        // details run.
+        const targetUrl = details?.find(([key]) => key === "targetUrl");
+        const target =
+          targetUrl && typeof targetUrl[1] === "string" ? targetUrl[1] : null;
+        return (
+          <div
+            key={issue.id}
+            className="px-3 py-1.5 text-sm flex flex-col gap-0.5 border-b border-border last:border-b-0"
           >
-            {issue.pageUrl}
-          </a>
-          <IssueDetails detailsJson={issue.detailsJson} />
-        </div>
-      ))}
+            <a
+              className="text-foreground/80 truncate hover:underline"
+              href={issue.pageUrl}
+              target="_blank"
+              rel="noreferrer"
+              title={issue.pageUrl}
+            >
+              {issue.pageUrl}
+            </a>
+            {target ? (
+              <span className="truncate pl-3" title={target}>
+                <SafeExternalLink
+                  url={target}
+                  label={`↪ ${target}`}
+                  className="text-xs text-muted-foreground hover:underline"
+                />
+              </span>
+            ) : null}
+            <IssueDetails
+              detailsJson={issue.detailsJson}
+              exceptKeys={target ? ["targetUrl"] : []}
+            />
+          </div>
+        );
+      })}
       {remaining > 0 && (
         <div className="px-3 py-2 text-xs text-muted-foreground">
           …and {remaining} more — export the issues CSV for the full list.
@@ -232,7 +256,13 @@ function parseDetails(detailsJson: string): Array<[string, unknown]> | null {
   return null;
 }
 
-function IssueDetails({ detailsJson }: { detailsJson: string | null }) {
+function IssueDetails({
+  detailsJson,
+  exceptKeys = [],
+}: {
+  detailsJson: string | null;
+  exceptKeys?: string[];
+}) {
   const details = useMemo(
     () => (detailsJson ? parseDetails(detailsJson) : null),
     [detailsJson],
@@ -241,7 +271,8 @@ function IssueDetails({ detailsJson }: { detailsJson: string | null }) {
   if (!details) return null;
 
   const entries = details.filter(
-    ([, value]) => value !== null && value !== undefined,
+    ([key, value]) =>
+      value !== null && value !== undefined && !exceptKeys.includes(key),
   );
   if (entries.length === 0) return null;
 
