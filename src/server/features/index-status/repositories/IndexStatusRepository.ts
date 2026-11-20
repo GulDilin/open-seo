@@ -15,6 +15,7 @@ export type IndexStatusVerdict = "indexed" | "not_indexed" | "likely_indexed";
 export type IndexStatusEvidence =
   | "url_inspection"
   | "gsc_impressions"
+  | "gsc_no_impressions"
   | "yandex_in_search"
   | "yandex_event";
 

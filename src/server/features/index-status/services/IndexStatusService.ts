@@ -27,6 +27,7 @@ type IndexStatusCheck = {
   evidence:
     | "url_inspection"
     | "gsc_impressions"
+    | "gsc_no_impressions"
     | "yandex_in_search"
     | "yandex_event";
   checkedAt: string;

@@ -209,7 +209,29 @@ export async function collectGoogle(input: {
         ]
       : [];
   });
-  await IndexStatusRepository.saveChecks(impressionWrites);
+  // The impressions heuristic's complement: a page the universe knows (Yandex
+  // index, audit crawl, or GSC itself) with zero Google impressions over the
+  // window is presumably not in Google's index — a named-presumption check,
+  // not "no data", so the problems filter can surface it. A URL inspection
+  // (the stronger signal) overwrites it; same freshness guard as impressions.
+  const noImpressionWrites = [...pageIds].flatMap(([url, pageId]) => {
+    if (impressionUrls.has(url)) return [];
+    if (freshInspection(googleChecks.get(url))) return [];
+    return [
+      {
+        pageId,
+        engine: "google" as const,
+        status: "not_indexed" as const,
+        reason: "No Google impressions in 90 days — presumably not indexed",
+        evidence: "gsc_no_impressions" as const,
+        checkedAt: input.now,
+      },
+    ];
+  });
+  await IndexStatusRepository.saveChecks([
+    ...impressionWrites,
+    ...noImpressionWrites,
+  ]);
 
   const candidates = inspectionCandidates(
     [...pageIds.keys()],

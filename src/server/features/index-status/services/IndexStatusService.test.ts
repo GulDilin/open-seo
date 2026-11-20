@@ -373,7 +373,7 @@ describe("IndexStatusService.getIndexStatus", () => {
     }
   });
 
-  it("adds audited pages to the universe with honest no-data columns", async () => {
+  it("presumes google absence for universe pages without impressions and surfaces them in problems", async () => {
     connectBoth();
     state.auditPages = [
       "https://site.example/audit-only",
@@ -384,9 +384,19 @@ describe("IndexStatusService.getIndexStatus", () => {
     const auditRow = rows.get("https://site.example/audit-only");
     expect(auditRow).toBeDefined();
     expect(auditRow?.sources).toContain("audit_crawl");
-    expect(auditRow?.google).toBeNull();
+    // Zero Google impressions over the window is the impressions heuristic's
+    // complement: a named presumption of absence, not "no data", so the
+    // problems-only filter can surface the page.
+    expect(auditRow?.google).toMatchObject({
+      status: "not_indexed",
+      evidence: "gsc_no_impressions",
+      reason: "No Google impressions in 90 days — presumably not indexed",
+    });
     expect(auditRow?.yandex).toBeNull();
     // Non-http(s) schemes never enter the universe.
     expect(rows.get("javascript:alert(1)")).toBeUndefined();
+
+    const problems = rowIndex(await read({ problemsOnly: true }));
+    expect(problems.get("https://site.example/audit-only")).toBeDefined();
   });
 });

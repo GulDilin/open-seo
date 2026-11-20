@@ -576,7 +576,7 @@ export const indexStatusPageSources = sqliteTable(
 // reason: why a page is absent (Google coverageState or Yandex excluded-page
 //   status text); null when indexed.
 // evidence: what produced the verdict — url_inspection | gsc_impressions |
-//   yandex_in_search | yandex_event.
+//   gsc_no_impressions | yandex_in_search | yandex_event.
 export const indexStatusChecks = sqliteTable(
   "index_status_checks",
   {
@@ -593,6 +593,7 @@ export const indexStatusChecks = sqliteTable(
       enum: [
         "url_inspection",
         "gsc_impressions",
+        "gsc_no_impressions",
         "yandex_in_search",
         "yandex_event",
       ],
