@@ -43,6 +43,30 @@ type DomainOverviewResult = z.infer<typeof domainOverviewResultSchema> & {
   displayTarget: string;
 };
 
+/**
+ * Backlinks metrics are merged from the Backlinks page's cached summary for
+ * the same hostname — a cache read only, so the overview never spends a
+ * DataForSEO call on them. Merged on every read (not stored in the overview
+ * cache entry) so they follow the summary's 6h refresh cycle, not the
+ * overview's 12h one. Null until the domain-rating card (domain page and
+ * dashboard) or the Backlinks page fills the cache.
+ */
+async function applyCachedBacklinksSummary(
+  result: DomainOverviewResult,
+  domain: string,
+  billingCustomer: BillingCustomerContext,
+): Promise<DomainOverviewResult> {
+  const overview = await BacklinksService.cachedProfileOverview(
+    { target: domain, scope: "subdomains" },
+    billingCustomer,
+  );
+  return {
+    ...result,
+    backlinks: overview?.summary.backlinks ?? null,
+    referringDomains: overview?.summary.referringDomains ?? null,
+  };
+}
+
 async function getOverview(
   input: {
     projectId: string;
@@ -71,11 +95,11 @@ async function getOverview(
   const cachedRaw = await getCached(cacheKey);
   const cached = domainOverviewResultSchema.safeParse(cachedRaw);
   if (cached.success && cached.data.hasData) {
-    return {
-      ...cached.data,
-      scope: target.scope,
-      displayTarget: target.display,
-    };
+    return applyCachedBacklinksSummary(
+      { ...cached.data, scope: target.scope, displayTarget: target.display },
+      domain,
+      billingCustomer,
+    );
   }
 
   const nowIso = new Date().toISOString();
@@ -121,7 +145,11 @@ async function getOverview(
     );
   }
 
-  return { ...stored, scope: target.scope, displayTarget: target.display };
+  return applyCachedBacklinksSummary(
+    { ...stored, scope: target.scope, displayTarget: target.display },
+    domain,
+    billingCustomer,
+  );
 }
 
 async function getSuggestedKeywords(
