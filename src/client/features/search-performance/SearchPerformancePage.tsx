@@ -31,7 +31,7 @@ import {
   exportDimensionRows,
   exportStriking,
   StrikingDistanceTable,
-  TotalsTable,
+  GscTotalsTable,
   type ExportTarget,
 } from "@/client/features/search-performance/SearchPerformanceParts";
 import { getStandardErrorMessage } from "@/client/lib/error-messages";
@@ -295,7 +295,7 @@ export function SearchPerformancePage({
             {reportQuery.isPlaceholderData ? (
               <SearchPerformanceLoadingState />
             ) : (
-              <TotalsTable report={report} />
+              <GscTotalsTable report={report} />
             )}
             <div className="overflow-hidden rounded-xl border border-border bg-card">
               <DataTableTabs

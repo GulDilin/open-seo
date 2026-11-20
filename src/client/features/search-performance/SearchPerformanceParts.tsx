@@ -112,16 +112,24 @@ export function exportDimensionRows(
 
 type Delta = { text: string; improved: boolean } | null;
 
-function percentDelta(current: number, previous: number): Delta {
-  if (previous <= 0) return null;
+export function percentDelta(
+  current: number | null,
+  previous: number | null,
+): Delta {
+  if (current === null || previous === null || previous <= 0) return null;
   const change = (current - previous) / previous;
   const pct = (change * 100).toFixed(1);
   return { text: `${change >= 0 ? "+" : ""}${pct}%`, improved: change >= 0 };
 }
 
 /** Position falls as rankings improve, so the delta is inverted. */
-function positionDelta(current: number, previous: number): Delta {
-  if (previous <= 0 || current <= 0) return null;
+export function positionDelta(
+  current: number | null,
+  previous: number | null,
+): Delta {
+  if (current === null || previous === null || previous <= 0 || current <= 0) {
+    return null;
+  }
   const change = previous - current;
   return {
     text: `${change >= 0 ? "+" : ""}${change.toFixed(1)}`,
@@ -129,31 +137,14 @@ function positionDelta(current: number, previous: number): Delta {
   };
 }
 
-export function TotalsTable({ report }: { report: Report }) {
-  const { totals, prevTotals, range } = report;
-  const deltaTitle = `Compared with ${range.prevStartDate} to ${range.prevEndDate}`;
-  const metrics = [
-    {
-      label: "Clicks",
-      value: formatCount(totals.clicks),
-      delta: percentDelta(totals.clicks, prevTotals.clicks),
-    },
-    {
-      label: "Impressions",
-      value: formatCount(totals.impressions),
-      delta: percentDelta(totals.impressions, prevTotals.impressions),
-    },
-    {
-      label: "Click-through rate",
-      value: formatCtr(totals.ctr),
-      delta: percentDelta(totals.ctr, prevTotals.ctr),
-    },
-    {
-      label: "Average position",
-      value: formatPosition(totals.position),
-      delta: positionDelta(totals.position, prevTotals.position),
-    },
-  ];
+/** The Metric | Value | Change table shared by the Google and Yandex tabs. */
+export function TotalsTable({
+  metrics,
+  deltaTitle,
+}: {
+  metrics: { label: string; value: string; delta: Delta }[];
+  deltaTitle: string;
+}) {
   return (
     <div className="rounded-xl border border-border bg-card p-4">
       <Table>
@@ -182,6 +173,38 @@ export function TotalsTable({ report }: { report: Report }) {
         </TableBody>
       </Table>
     </div>
+  );
+}
+
+/** Google totals: current vs previous-period GSC totals. */
+export function GscTotalsTable({ report }: { report: Report }) {
+  const { totals, prevTotals, range } = report;
+  return (
+    <TotalsTable
+      deltaTitle={`Compared with ${range.prevStartDate} to ${range.prevEndDate}`}
+      metrics={[
+        {
+          label: "Clicks",
+          value: formatCount(totals.clicks),
+          delta: percentDelta(totals.clicks, prevTotals.clicks),
+        },
+        {
+          label: "Impressions",
+          value: formatCount(totals.impressions),
+          delta: percentDelta(totals.impressions, prevTotals.impressions),
+        },
+        {
+          label: "Click-through rate",
+          value: formatCtr(totals.ctr),
+          delta: percentDelta(totals.ctr, prevTotals.ctr),
+        },
+        {
+          label: "Average position",
+          value: formatPosition(totals.position),
+          delta: positionDelta(totals.position, prevTotals.position),
+        },
+      ]}
+    />
   );
 }
 

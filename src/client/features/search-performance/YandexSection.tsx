@@ -18,6 +18,11 @@ import {
   TableRow,
 } from "@/client/components/ui/table";
 import { YandexConnectionCard } from "@/client/features/integrations/YandexConnectionCard";
+import {
+  percentDelta,
+  positionDelta,
+  TotalsTable,
+} from "@/client/features/search-performance/SearchPerformanceParts";
 import { getYandexSearchPerformance } from "@/serverFunctions/yandexWebmaster";
 import {
   YANDEX_DATE_RANGES,
@@ -51,6 +56,10 @@ function formatCount(value: number | null | undefined): string {
 
 function formatPosition(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : value.toFixed(1);
+}
+
+function formatRate(value: number | null): string {
+  return value === null ? "—" : `${(value * 100).toFixed(1)}%`;
 }
 
 function formatCtr(clicks: number | null, impressions: number | null): string {
@@ -177,6 +186,28 @@ export function YandexSection({ projectId }: { projectId: string }) {
         ) : null}
       </div>
 
+      {data.rows.length > 0 ? (
+        <div className="space-y-1.5">
+          <TotalsTable
+            metrics={metricCards(data)}
+            deltaTitle={changeTitle(data)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Card totals aggregate the {data.rows.length} loaded queries — Yandex
+            has no site-wide search report, so they are lower bounds.{" "}
+            {data.change
+              ? `Change compares the same queries with ${data.change.dateFrom} to ${data.change.dateTo} (${data.change.matchedQueryCount} of ${data.rows.length} matched).`
+              : null}
+          </p>
+          {data.changeError ? (
+            <p role="alert" className="text-xs text-muted-foreground">
+              Comparison with the previous period unavailable:{" "}
+              {data.changeError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {query.isError ? (
         <QueryError
           error={query.error}
@@ -243,6 +274,46 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
       <dd className="mt-0.5 truncate text-sm font-semibold">{value}</dd>
     </div>
   );
+}
+
+type YandexPerformanceData = Exclude<
+  Awaited<ReturnType<typeof getYandexSearchPerformance>>,
+  { connected: false }
+>;
+
+/** Google-parity metric rows from the Yandex aggregates. Average position is
+ *  the impression-weighted average show position, not Yandex's per-query click
+ *  position. */
+function metricCards(data: YandexPerformanceData) {
+  const prev = data.change?.totals ?? null;
+  return [
+    {
+      label: "Clicks",
+      value: formatCount(data.totals.clicks),
+      delta: percentDelta(data.totals.clicks, prev?.clicks ?? null),
+    },
+    {
+      label: "Impressions",
+      value: formatCount(data.totals.impressions),
+      delta: percentDelta(data.totals.impressions, prev?.impressions ?? null),
+    },
+    {
+      label: "Click-through rate",
+      value: formatRate(data.totals.ctr),
+      delta: percentDelta(data.totals.ctr, prev?.ctr ?? null),
+    },
+    {
+      label: "Average position",
+      value: formatPosition(data.totals.position),
+      delta: positionDelta(data.totals.position, prev?.position ?? null),
+    },
+  ];
+}
+
+function changeTitle(data: YandexPerformanceData): string {
+  return data.change
+    ? `Compared with ${data.change.dateFrom} to ${data.change.dateTo}`
+    : "No previous-period comparison available";
 }
 
 function SelectSize<T extends string>({

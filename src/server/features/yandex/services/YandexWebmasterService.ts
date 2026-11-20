@@ -11,8 +11,11 @@ import {
 export { YandexWebmasterNotConnectedError } from "@/server/lib/yandexWebmasterErrors";
 import { YANDEX_WEBMASTER_PROVIDER_ID } from "@/shared/yandex-webmaster";
 import { YandexConnectionRepository } from "@/server/features/yandex/repositories/YandexConnectionRepository";
+import { previousPeriod } from "@/server/features/gsc/searchPerformanceReport";
 import {
   resolveYandexDateWindow,
+  sumYandexPreviousTotals,
+  sumYandexQueryTotals,
   toWireDeviceType,
   toWireOrderBy,
   YANDEX_DEFAULT_ROWS,
@@ -21,9 +24,13 @@ import {
   type YandexDateRange,
   type YandexDeviceTypeOption,
   type YandexQueryOrder,
+  type YandexQueryTotals,
 } from "@/server/features/yandex/yandexSearchQueries";
 import type {
+  YandexDeviceType,
   YandexHost,
+  YandexPopularQueries,
+  YandexQueryOrderBy,
   YandexQueryRow,
   YandexSiteSummary,
 } from "@/server/lib/yandexWebmasterClient";
@@ -178,16 +185,65 @@ type YandexSearchPerformanceResult = {
   // Yandex's count of queries available in the capped pool (≤ 3000).
   totalCount: number;
   rows: YandexQueryRow[];
+  // Aggregates of the loaded rows — Google-parity metric cards. Lower bounds:
+  // they cover only the loaded top queries, not the whole site.
+  totals: YandexQueryTotals;
+  // Previous-window comparison over the same queries; null when there were no
+  // rows to compare or the previous-window fetch failed (changeError says why).
+  change: {
+    dateFrom: string;
+    dateTo: string;
+    totals: YandexQueryTotals;
+    // How many of the loaded queries the previous window also returned.
+    matchedQueryCount: number;
+  } | null;
+  changeError: string | null;
   summary: YandexSiteSummary | null;
   // Why the summary is missing when it is — shown instead of silent nulls.
   summaryError: string | null;
   indexingStatus: string | null;
 };
 
+/** Fetch up to `wanted` popular-query rows as serial 500-row pages, stopping
+ *  on a short page (Yandex has no published rate limits). */
+async function fetchQueryPages(
+  client: ReturnType<typeof createYandexWebmasterClient>,
+  hostId: string,
+  input: {
+    orderBy: YandexQueryOrderBy;
+    deviceType: YandexDeviceType;
+    dateFrom: string;
+    dateTo: string;
+    wanted: number;
+  },
+): Promise<YandexPopularQueries> {
+  const first = await client.getPopularQueries(hostId, {
+    orderBy: input.orderBy,
+    deviceType: input.deviceType,
+    dateFrom: input.dateFrom,
+    dateTo: input.dateTo,
+    limit: Math.min(input.wanted, YANDEX_PAGE_LIMIT),
+    offset: 0,
+  });
+  const rows = [...first.rows];
+  if (rows.length >= YANDEX_PAGE_LIMIT && input.wanted > YANDEX_PAGE_LIMIT) {
+    const second = await client.getPopularQueries(hostId, {
+      orderBy: input.orderBy,
+      deviceType: input.deviceType,
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
+      limit: input.wanted - rows.length,
+      offset: rows.length,
+    });
+    rows.push(...second.rows);
+  }
+  return { ...first, rows };
+}
+
 /** The Yandex tab / MCP tool payload: popular queries for the window plus the
- *  site summary. Pages are fetched serially (Yandex has no published rate
- *  limits) and the fetch stops on a short page. Summary and host info are
- *  best-effort — a brand-new site has neither, and queries are the point. */
+ *  site summary and the previous-window comparison. Summary, host info, and
+ *  the change are best-effort — a brand-new site has neither, and queries are
+ *  the point. */
 async function getSearchPerformance(input: {
   projectId: string;
   dateRange?: YandexDateRange;
@@ -214,41 +270,72 @@ async function getSearchPerformance(input: {
     userId: connection.connectedByUserId,
     yandexAccountId: connection.yandexAccountId ?? undefined,
   });
-
-  const first = await client.getPopularQueries(connection.hostId, {
+  const queryInput = {
     orderBy: toWireOrderBy(orderBy),
     deviceType: toWireDeviceType(deviceType),
+    wanted,
+  };
+
+  const current = await fetchQueryPages(client, connection.hostId, {
+    ...queryInput,
     dateFrom,
     dateTo,
-    limit: Math.min(wanted, YANDEX_PAGE_LIMIT),
-    offset: 0,
   });
-  const rows = [...first.rows];
-  if (rows.length >= YANDEX_PAGE_LIMIT && wanted > YANDEX_PAGE_LIMIT) {
-    const second = await client.getPopularQueries(connection.hostId, {
-      orderBy: toWireOrderBy(orderBy),
-      deviceType: toWireDeviceType(deviceType),
-      dateFrom,
-      dateTo,
-      limit: wanted - rows.length,
-      offset: rows.length,
-    });
-    rows.push(...second.rows);
-  }
 
-  const [summary, hostInfo] = await Promise.allSettled([
+  // The change compares the previous same-length window over the same
+  // queries. The reported window is shifted (not the requested one) so a site
+  // with clamped history compares like-for-like windows. Best-effort: a
+  // failure degrades the Change column, not the whole section.
+  const [summary, hostInfo, previous] = await Promise.allSettled([
     client.getSummary(connection.hostId),
     client.getHostInfo(connection.hostId),
+    current.rows.length > 0
+      ? (async () => {
+          const window = previousPeriod(
+            current.reportedDateFrom,
+            current.reportedDateTo,
+          );
+          const previousRows = await fetchQueryPages(
+            client,
+            connection.hostId,
+            {
+              ...queryInput,
+              dateFrom: window.startDate,
+              dateTo: window.endDate,
+            },
+          );
+          return {
+            window,
+            ...sumYandexPreviousTotals(current.rows, previousRows.rows),
+          };
+        })()
+      : Promise.resolve(null),
   ]);
 
   return {
     hostUrl: connection.hostUrl,
     orderBy,
     deviceType,
-    reportedDateFrom: first.reportedDateFrom,
-    reportedDateTo: first.reportedDateTo,
-    totalCount: first.totalCount,
-    rows,
+    reportedDateFrom: current.reportedDateFrom,
+    reportedDateTo: current.reportedDateTo,
+    totalCount: current.totalCount,
+    rows: current.rows,
+    totals: sumYandexQueryTotals(current.rows),
+    change:
+      previous.status === "fulfilled" && previous.value
+        ? {
+            dateFrom: previous.value.window.startDate,
+            dateTo: previous.value.window.endDate,
+            totals: previous.value.totals,
+            matchedQueryCount: previous.value.matchedQueryCount,
+          }
+        : null,
+    changeError:
+      previous.status === "rejected"
+        ? previous.reason instanceof Error
+          ? previous.reason.message
+          : String(previous.reason)
+        : null,
     summary: summary.status === "fulfilled" ? summary.value : null,
     summaryError:
       summary.status === "rejected"
