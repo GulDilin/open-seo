@@ -122,8 +122,10 @@ describe("rank check workflow credit ceiling", () => {
     mocks.updateRun.mockResolvedValue(undefined);
     mocks.isHostedServerAuthMode.mockResolvedValue(true);
     mocks.autumnCheck.mockResolvedValue({ balance: { remaining: 1_000 } });
-    // No provider credentials by default: google falls back to DataForSEO.
-    mocks.getOptionalEnvValue.mockResolvedValue(undefined);
+    // Only the incumbent is configured: google runs on the metered path.
+    mocks.getOptionalEnvValue.mockImplementation(async (name: string) =>
+      name === "DATAFORSEO_API_KEY" ? "dfs-key" : undefined,
+    );
   });
 
   it("rejects a keyword-list race before balance or DataForSEO calls", async () => {
@@ -183,19 +185,74 @@ describe("rank check workflow provider selection", () => {
   });
 
   it("keeps city-level google trackers on the DataForSEO path even with serper", async () => {
+    mocks.getOptionalEnvValue.mockImplementation(async (name: string) =>
+      name === "DATAFORSEO_API_KEY"
+        ? "dfs-key"
+        : name === "SERPER_API_KEY"
+          ? "serper-key"
+          : undefined,
+    );
+
     await runWorkflow({ locationName: "Austin,Texas,United States" });
 
     expect(mocks.runProviderCheck).not.toHaveBeenCalled();
     expect(mocks.runLiveCheck).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the DataForSEO path when no provider key is set", async () => {
+  it("fails a city-level google tracker when only serper is configured", async () => {
+    await runWorkflow({ locationName: "Austin,Texas,United States" });
+
+    expect(mocks.failRunIfActive).toHaveBeenCalledTimes(1);
+    expect(mocks.failRunIfActive.mock.calls[0][1]).toContain(
+      "DATAFORSEO_API_KEY",
+    );
+    expect(mocks.runProviderCheck).not.toHaveBeenCalled();
+    expect(mocks.runLiveCheck).not.toHaveBeenCalled();
+  });
+
+  it("fails the run instead of using an unconfigured DataForSEO when no provider key is set", async () => {
     mocks.getOptionalEnvValue.mockResolvedValue(undefined);
 
     await runWorkflow({});
 
-    expect(mocks.runProviderCheck).not.toHaveBeenCalled();
-    expect(mocks.runLiveCheck).toHaveBeenCalledTimes(1);
+    expect(mocks.failRunIfActive).toHaveBeenCalledTimes(1);
+    expect(mocks.failRunIfActive.mock.calls[0][1]).toContain(
+      "SERPER_API_KEY",
+    );
+    expect(mocks.failRunIfActive.mock.calls[0][1]).toContain(
+      "DATAFORSEO_API_KEY",
+    );
+    expect(mocks.updateConfig).toHaveBeenCalledWith("config_1", "project_1", {
+      lastSkipReason: "provider_not_configured",
+    });
+    // The metered DataForSEO client must never be constructed without its key.
+    expect(mocks.createDataforseoClient).not.toHaveBeenCalled();
+    expect(mocks.runLiveCheck).not.toHaveBeenCalled();
+  });
+
+  it("logs the provider actually serving a yandex run, not the incumbent", async () => {
+    mocks.getOptionalEnvValue.mockImplementation(async (name: string) =>
+      name === "YANDEX_SEARCH_API_KEY"
+        ? "yandex-key"
+        : name === "YANDEX_FOLDER_ID"
+          ? "folder"
+          : undefined,
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    // Read before mockRestore — restoring clears the spy's call log.
+    let providerLine: string | undefined;
+    try {
+      await runWorkflow({ searchEngine: "yandex" });
+      providerLine = logSpy.mock.calls
+        .map((call) => String(call[0]))
+        .find((line) => line.includes("loaded"));
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(providerLine).toContain("provider=yandex");
+    expect(providerLine).not.toContain("dataforseo");
   });
 
   it("fails a non-google engine with no provider before any check", async () => {
@@ -240,6 +297,10 @@ describe("rank check finalization", () => {
     mocks.updateRun.mockResolvedValue(undefined);
     mocks.isHostedServerAuthMode.mockResolvedValue(true);
     mocks.autumnCheck.mockResolvedValue({ balance: { remaining: 1_000 } });
+    // The incumbent serves google here, so the run reaches its batch steps.
+    mocks.getOptionalEnvValue.mockImplementation(async (name: string) =>
+      name === "DATAFORSEO_API_KEY" ? "dfs-key" : undefined,
+    );
   });
 
   it("fails a run where no keyword produced a snapshot, keeping the recorded reason", async () => {

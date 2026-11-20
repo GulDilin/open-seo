@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { yandexWebSearch } from "./client";
+import { wordstatTopRequests, yandexWebSearch } from "./client";
 
 const envMocks = vi.hoisted(() => ({
   getRequiredEnvValue: vi.fn(),
@@ -70,6 +70,44 @@ describe("yandexWebSearch", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(yandexWebSearch({ keyword: "sneaky" })).resolves.toEqual([]);
+    vi.unstubAllGlobals();
+  });
+
+  it("carries the Yandex error body's reason on an HTTP 400", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 3,
+          message: "Invalid wordstat phrase: too long",
+        }),
+        { status: 400 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(wordstatTopRequests({ phrase: "x" })).rejects.toMatchObject({
+      code: "UPSTREAM_UNAVAILABLE",
+      message:
+        'Yandex Search API responded 400 on /v2/wordstat/topRequests: Invalid wordstat phrase: too long (code 3)',
+      details: {
+        provider: "yandex",
+        providerStatus: "400",
+        providerPath: "/v2/wordstat/topRequests",
+      },
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps a non-JSON 400 body in the error details", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("Bad Request", { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(wordstatTopRequests({ phrase: "x" })).rejects.toMatchObject({
+      message: 'Yandex Search API responded 400 on /v2/wordstat/topRequests: Bad Request',
+      details: { responseBody: "Bad Request" },
+    });
     vi.unstubAllGlobals();
   });
 });

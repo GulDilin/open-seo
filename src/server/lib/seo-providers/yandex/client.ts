@@ -49,6 +49,52 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Error text can echo vendor content — keep it one line and bounded, both in
+// the message and in details.
+const MAX_YANDEX_ERROR_PAYLOAD_LENGTH = 300;
+
+/** Yandex answers non-OK with a gRPC-style JSON body whose `message` names the
+ *  rejected argument (e.g. which wordstat field failed validation). A bare
+ *  status code reads like an outage and leaves nothing to act on, so the
+ *  message rides along; the raw body lands in details. */
+function yandexHttpError(
+  status: number,
+  rawBody: string,
+  path: string,
+): AppError {
+  let reason = rawBody;
+  try {
+    const parsed: unknown = JSON.parse(rawBody);
+    // `in` checks keep this cast-free; unknown stays unknown until narrowed.
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      "message" in parsed &&
+      typeof parsed.message === "string"
+    ) {
+      const code = "code" in parsed ? parsed.code : undefined;
+      reason =
+        typeof code === "number"
+          ? `${parsed.message} (code ${code})`
+          : parsed.message;
+    }
+  } catch {
+    // Not JSON — fall back to the raw body.
+  }
+  const detail = reason.replace(/\s+/g, " ").trim();
+  const bounded = detail.slice(0, MAX_YANDEX_ERROR_PAYLOAD_LENGTH);
+  return new AppError(
+    "UPSTREAM_UNAVAILABLE",
+    `Yandex Search API responded ${status} on ${path}${bounded ? `: ${bounded}` : ""}`,
+    {
+      provider: "yandex",
+      providerStatus: String(status),
+      providerPath: path,
+      responseBody: bounded,
+    },
+  );
+}
+
 function yandexThrottled<T>(run: () => Promise<T>): Promise<T> {
   const result = callQueue.then(async () => {
     const gap = lastRequestAt + MIN_REQUEST_GAP_MS - Date.now();
@@ -103,10 +149,8 @@ async function yandexFetch(
       }
     }
     if (!response.ok) {
-      throw new AppError(
-        "UPSTREAM_UNAVAILABLE",
-        `Yandex Search API responded ${response.status}`,
-      );
+      const rawBody = await response.text().catch(() => "");
+      throw yandexHttpError(response.status, rawBody, path);
     }
     return response.json();
   });

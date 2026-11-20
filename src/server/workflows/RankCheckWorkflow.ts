@@ -20,6 +20,7 @@ import {
   resolveSerpProvider,
   serpProviderById,
 } from "@/server/lib/seo-providers/routing";
+import type { ProviderId } from "@/shared/search-engines";
 import { getKeywordDataProvider } from "@/shared/keyword-locations";
 import { createDataforseoClient } from "@/server/lib/dataforseo";
 import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
@@ -317,39 +318,44 @@ export class RankCheckWorkflow extends WorkflowEntrypoint<
       maxCostCredits,
     } = event.payload;
 
-    // Provider gate before any paid call: non-google engines run on their own
-    // provider phases' adapters; until one is configured, the run fails with
-    // the resolver's error (which names the missing credentials) instead of
-    // silently falling back to the google-only DataForSEO path.
-    if (searchEngine !== "google") {
-      try {
-        await resolveSerpProvider(searchEngine);
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unknown error";
-        await failRunIfActive(runId, message);
-        await RankTrackingRepository.updateConfig(configId, projectId, {
-          lastSkipReason: "provider_not_configured",
-        });
-        return;
-      }
+    // Provider gate before any paid call. One provider id per run, resolved
+    // once and logged as resolved:
+    // - non-google engines run on their own provider phases' adapters;
+    // - country-level google follows the google chain (serper first, then the
+    //   incumbent);
+    // - city-level google needs sub-country geo only the incumbent serves
+    //   (decisions §5), so serper is never consulted.
+    // A run with NO configured provider fails here with the resolver's error
+    // (which names the missing credentials) instead of falling through to the
+    // DataForSEO client paths, which without DATAFORSEO_API_KEY would only
+    // die mid-run on an opaque missing-env error — using a provider the
+    // operator deliberately left unconfigured.
+    let providerId: ProviderId | null = null;
+    let providerError: string | null = null;
+    try {
+      providerId = await resolveSerpProvider(searchEngine, {
+        cityLevel: searchEngine === "google" && !!locationName,
+      });
+    } catch (error) {
+      providerError = error instanceof Error ? error.message : "Unknown error";
     }
-    // Google checks prefer Serper when its key is set (provider chain order);
-    // without it the resolver names the incumbent, and the run continues on
-    // the DataForSEO paths below exactly as before. City-level trackers stay
-    // on DataForSEO even with Serper configured: city targeting needs
-    // sub-country geo, which Serper cannot serve (decisions §5).
-    let googleProvider =
-      searchEngine === "google" && !locationName
-        ? await resolveSerpProvider("google").catch(() => null)
-        : null;
+    if (!providerId) {
+      await failRunIfActive(
+        runId,
+        providerError ?? "No SERP provider configured for this tracker.",
+      );
+      await RankTrackingRepository.updateConfig(configId, projectId, {
+        lastSkipReason: "provider_not_configured",
+      });
+      return;
+    }
     // Same gate as creation, for trackers made before credentials changed:
     // google on a market DataForSEO does not cover (Russia, China) must not
     // silently fall back to the incumbent — fail the run with the credential
     // named and mark the skip reason.
     if (
       searchEngine === "google" &&
-      googleProvider !== "serper" &&
+      providerId !== "serper" &&
       ["wordstat", "none"].includes(getKeywordDataProvider(locationCode))
     ) {
       await failRunIfActive(
@@ -405,18 +411,14 @@ export class RankCheckWorkflow extends WorkflowEntrypoint<
       const keywords = prepareResult.keywords;
 
       console.log(
-        `[rank-check] ${runId} loaded ${keywords.length} keywords (provider=${googleProvider ?? "dataforseo"})`,
+        `[rank-check] ${runId} loaded ${keywords.length} keywords (provider=${providerId})`,
       );
 
       let batchError: string | null = null;
 
       try {
-        const providerId =
-          searchEngine === "google"
-            ? googleProvider
-            : await resolveSerpProvider(searchEngine);
-        const provider = providerId ? serpProviderById(providerId) : null;
-        if (provider && providerId) {
+        const provider = serpProviderById(providerId);
+        if (provider) {
           // Adapter path (serper google, yandex, brightdata baidu/bing): the
           // provider module reads its own credentials; locationName carries
           // the provider's region id for yandex. No metered DataForSEO

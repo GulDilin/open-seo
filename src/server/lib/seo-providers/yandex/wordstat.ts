@@ -45,6 +45,10 @@ export const wordstatProvider: KeywordDataProvider = {
 async function wordstatVolume(
   query: KeywordVolumeQuery,
 ): Promise<number | null> {
+  // Yandex rejects phrases over 400 characters with INVALID_ARGUMENT, and
+  // auto-imported panel queries can exceed the UI's keyword-length cap —
+  // return an honest null instead of failing the whole refresh.
+  if (query.keyword.length > 400) return null;
   // Regions on the volume query are Yandex region ids (numeric strings). A
   // non-numeric region (e.g. a DataForSEO city label) is not an id — drop it
   // rather than send Wordstat a name it would reject or mis-scope.
