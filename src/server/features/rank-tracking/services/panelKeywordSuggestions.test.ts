@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { PanelKeywordSuggestions } from "./panelKeywordSuggestions";
 import { GscService } from "@/server/features/gsc/services/GscService";
+import { GSC_MAX_ROW_LIMIT } from "@/server/features/gsc/searchAnalytics";
 import { YandexWebmasterService } from "@/server/features/yandex/services/YandexWebmasterService";
 import { sumYandexQueryTotals } from "@/server/features/yandex/yandexSearchQueries";
 import { RankTrackingRepository } from "@/server/features/rank-tracking/repositories/RankTrackingRepository";
@@ -151,6 +152,8 @@ it("merges both panels, drops already-tracked keywords, and sorts by impressions
       projectId: "p1",
       dateRange: "last_28_days",
       orderBy: "impressions",
+      // The pool shows no comparison cards, so it must not pay for them.
+      includeChange: false,
     }),
   );
 });
@@ -227,6 +230,59 @@ it("raises the cap for the auto-import limit", async () => {
   expect(result.suggestions[99]).toMatchObject({ query: "q99" });
 });
 
+it("fetches the full GSC page so the import cap is not cut by the fetcher default", async () => {
+  vi.mocked(GscService.getConnection).mockResolvedValue(gscConnection);
+  vi.mocked(GscService.getPerformance).mockResolvedValue(
+    gscPerformance(
+      Array.from({ length: 400 }, (_, i) => ({
+        keys: [`q${i}`],
+        impressions: 400 - i,
+        clicks: 1,
+      })),
+    ),
+  );
+
+  const result = await PanelKeywordSuggestions.get({
+    projectId: "p1",
+    limit: 300,
+  });
+
+  expect(GscService.getPerformance).toHaveBeenCalledWith(
+    expect.objectContaining({ rowLimit: GSC_MAX_ROW_LIMIT }),
+  );
+  expect(result.suggestions).toHaveLength(300);
+});
+
+it("keeps filling the import cap as earlier queries become tracked", async () => {
+  vi.mocked(GscService.getConnection).mockResolvedValue(gscConnection);
+  vi.mocked(GscService.getPerformance).mockResolvedValue(
+    gscPerformance(
+      Array.from({ length: 1000 }, (_, i) => ({
+        keys: [`q${i}`],
+        impressions: 1000 - i,
+        clicks: 1,
+      })),
+    ),
+  );
+  vi.mocked(
+    RankTrackingRepository.getKeywordsForActiveConfigs,
+  ).mockResolvedValue(
+    Array.from({ length: 300 }, (_, i) => ({ keyword: `q${i}` })),
+  );
+
+  const result = await PanelKeywordSuggestions.get({
+    projectId: "p1",
+    domain: "example.com",
+    limit: 300,
+    subtract: "domain",
+  });
+
+  // The next sync after 300 queries landed still yields 300 fresh ones.
+  expect(result.suggestions).toHaveLength(300);
+  expect(result.suggestions[0]).toMatchObject({ query: "q300" });
+  expect(result.suggestions[299]).toMatchObject({ query: "q599" });
+});
+
 it("returns empty suggestions and sources without error when no panel is connected", async () => {
   const result = await PanelKeywordSuggestions.get({ projectId: "p1" });
 
@@ -259,6 +315,24 @@ it("skips panels whose site doesn't cover the tracked domain", async () => {
     query: "widgets",
     source: "yandex_webmaster",
   });
+});
+
+it("lets a panel on a subdomain cover the apex tracked domain", async () => {
+  vi.mocked(GscService.getConnection).mockResolvedValue({
+    ...gscConnection,
+    siteUrl: "https://shop.example.com/",
+  });
+  vi.mocked(GscService.getPerformance).mockResolvedValue(
+    gscPerformance([{ keys: ["blue widgets"], impressions: 40, clicks: 1 }]),
+  );
+
+  const result = await PanelKeywordSuggestions.get({
+    projectId: "p1",
+    domain: "example.com",
+  });
+
+  expect(result.sources).toEqual(["gsc"]);
+  expect(result.suggestions[0]).toMatchObject({ query: "blue widgets" });
 });
 
 it("keeps the other panel's suggestions when one panel fetch fails", async () => {

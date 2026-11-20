@@ -252,6 +252,9 @@ async function getSearchPerformance(input: {
   orderBy?: YandexQueryOrder;
   deviceType?: YandexDeviceTypeOption;
   limit?: number;
+  /** Skip the previous-window comparison. Consumers that only need the query
+   *  rows (keyword auto-import) avoid doubling the popular-queries pages. */
+  includeChange?: boolean;
 }): Promise<YandexSearchPerformanceResult> {
   const connection = await YandexConnectionRepository.getByProjectId(
     input.projectId,
@@ -289,7 +292,7 @@ async function getSearchPerformance(input: {
   const [summary, hostInfo, previous] = await Promise.allSettled([
     client.getSummary(connection.hostId),
     client.getHostInfo(connection.hostId),
-    current.rows.length > 0
+    current.rows.length > 0 && input.includeChange !== false
       ? (async () => {
           const window = previousPeriod(
             current.reportedDateFrom,
