@@ -304,6 +304,20 @@ describe("yandexWebmasterClient", () => {
     });
   });
 
+  it("reads SQI from the summary, tolerating a null value", async () => {
+    mocks.fetch
+      .mockResolvedValueOnce(jsonResponse({ user_id: 111 }))
+      .mockResolvedValueOnce(jsonResponse({ sqi: 30 }))
+      .mockResolvedValueOnce(jsonResponse({ sqi: null }));
+    const client = createYandexWebmasterClient({ userId: "u1" });
+
+    await expect(client.getSqi("https:ya.ru:80")).resolves.toBe(30);
+    await expect(client.getSqi("https:ya.ru:80")).resolves.toBeNull();
+    expect(urlOf(mocks.fetch.mock.calls[1][0])).toContain(
+      "/v4/user/111/hosts/https%3Aya.ru%3A80/summary",
+    );
+  });
+
   it("surfaces Yandex's error_code for an unverified host", async () => {
     mocks.fetch
       .mockResolvedValueOnce(jsonResponse({ user_id: 111 }))

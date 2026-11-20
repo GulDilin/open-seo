@@ -46,6 +46,15 @@ export const getProjectDomainRating = createServerFn({ method: "POST" })
     ),
   );
 
+// The project website's Yandex SQI (ИКС) — first-party Webmaster data, no
+// DataForSEO key needed.
+export const getProjectSqi = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(projectDomainRatingInputSchema)
+  .handler(({ context }) =>
+    DomainService.getProjectSqi({ projectId: context.projectId }),
+  );
+
 export const getDomainKeywordSuggestions = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
   .validator(domainKeywordSuggestionsSchema)

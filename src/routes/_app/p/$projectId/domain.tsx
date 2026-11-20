@@ -14,6 +14,9 @@ import {
 } from "@/types/schemas/domain";
 import { getDomainRouteState } from "@/client/features/domain/domainRouteState";
 import { useProjectMarket } from "@/client/features/projects/useProjectMarket";
+import { Card } from "@/client/components/ui/card";
+import { ProjectDomainRatingCard } from "@/client/features/domain/components/ProjectDomainRatingCard";
+import { ProjectSqiCard } from "@/client/features/domain/components/ProjectSqiCard";
 
 const DEFAULT_DOMAIN_SEARCH = {
   domain: "",
@@ -56,13 +59,25 @@ function DomainOverviewRoute() {
   const search = Route.useSearch();
   const projectMarket = useProjectMarket(projectId);
   const routeState = getDomainRouteState(search, projectMarket);
-  // The whole page runs on DataForSEO; without its key every mounted query
-  // would fail server-side. Render the badge instead of the page.
+  // Domain research (traffic, keywords, pages) runs on DataForSEO; without
+  // its key every research query would fail server-side, so render the badge
+  // instead of the research UI. The project's own site cards do not need
+  // DataForSEO (SQI is first-party Webmaster data, the rating degrades to an
+  // honest dash), so the page is never empty.
   const setup = useSeoProviderSetup();
   if (setup.data && !setup.data.dataforseo)
     return (
-      <div className="space-y-3">
+      <div className="space-y-3 px-4 py-4 md:px-6 md:py-6">
         <DataForSeoRequiredBadge />
+        <Card className="gap-0 py-0">
+          <div className="px-4 pt-4 pb-3">
+            <h2 className="text-lg font-semibold">Your website</h2>
+          </div>
+          <div className="flex flex-wrap items-stretch gap-3 px-4 pb-4">
+            <ProjectDomainRatingCard projectId={projectId} />
+            <ProjectSqiCard projectId={projectId} />
+          </div>
+        </Card>
       </div>
     );
 

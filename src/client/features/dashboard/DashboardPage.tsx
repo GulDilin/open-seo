@@ -19,6 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import { sort } from "remeda";
 import { DashboardOnboarding } from "./DashboardOnboarding";
 import { DashboardAgentCard } from "./DashboardAgentCard";
+import { DashboardDomainRatingCard } from "./DashboardDomainRatingCard";
 import { getStepStatus } from "./dashboardSteps";
 import {
   AuditHealthCard,
@@ -157,6 +158,13 @@ export function DashboardPage({
           },
         ]
       : []),
+    // Authority summary always renders: each stat degrades to its own reason
+    // (no website / no DataForSEO key / Webmaster not connected).
+    {
+      key: "domainRating",
+      hasData: true,
+      node: <DashboardDomainRatingCard projectId={projectId} />,
+    },
   ];
 
   return (

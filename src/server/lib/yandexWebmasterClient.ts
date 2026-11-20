@@ -42,6 +42,13 @@ const summaryResponseSchema = z.looseObject({
   site_problems: z.record(z.string(), z.number().nullish()).optional(),
 });
 
+// The current SQI (site quality index, ИКС) lives in the summary response.
+// Yandex's current reference documents no dedicated /sqi resource anymore —
+// only /summary (current value) and /sqi-history (trend points) carry it.
+const sqiResponseSchema = z.looseObject({
+  sqi: z.number().nullish(),
+});
+
 const queryIndicatorsSchema = z.looseObject({
   TOTAL_SHOWS: z.number().nullish(),
   TOTAL_CLICKS: z.number().nullish(),
@@ -378,6 +385,17 @@ export function createYandexWebmasterClient(opts: {
           recommendation: problems.RECOMMENDATION ?? null,
         },
       };
+    },
+
+    /** Current site quality index (ИКС) for the host, read from the summary's
+     *  sqi field — the documented source. Null when Yandex has no value for
+     *  the site yet. */
+    async getSqi(hostId: string): Promise<number | null> {
+      const data = await request(
+        `${API_BASE}/user/${await resolveUid()}/hosts/${encodeURIComponent(hostId)}/summary`,
+        (d) => sqiResponseSchema.parse(d),
+      );
+      return data.sqi ?? null;
     },
 
     async getPopularQueries(

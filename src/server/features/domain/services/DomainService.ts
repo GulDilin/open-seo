@@ -13,6 +13,9 @@ import { getKeywordsPage } from "@/server/features/domain/services/domainKeyword
 import { getPagesPage } from "@/server/features/domain/services/domainPagesPage";
 import { BacklinkSnapshotRepository } from "@/server/features/domain/repositories/BacklinkSnapshotRepository";
 import { BacklinksService } from "@/server/features/backlinks/services/BacklinksService";
+import { YandexConnectionRepository } from "@/server/features/yandex/repositories/YandexConnectionRepository";
+import { isExpectedGrantFailure } from "@/server/features/yandex/services/YandexWebmasterService";
+import { createYandexWebmasterClient } from "@/server/lib/yandexWebmasterClient";
 
 // Lets a caller attribute spend to its own feature (e.g. the SAM agent). Applied
 // to the DataForSEO call, not the cache key, so cached results are shared
@@ -218,6 +221,90 @@ async function getSuggestedKeywords(
   return keywords;
 }
 
+/** The project website's Yandex SQI (ИКС). First-party Webmaster data — works
+ *  without the DataForSEO key. ИКС changes rarely, so a value is served from
+ *  the R2 cache for a day before Yandex is asked again. */
+const PROJECT_SQI_TTL_SECONDS = 24 * 60 * 60;
+
+const projectSqiCacheSchema = z.object({
+  sqi: z.number().nullable(),
+  fetchedAt: z.string(),
+});
+
+type ProjectSqiResult = {
+  connected: boolean;
+  hostUrl: string | null;
+  sqi: number | null;
+  /** Why live data is missing when it is — dead grant etc. Rendered instead
+   *  of a silent dash. */
+  unavailableReason: string | null;
+};
+
+async function getProjectSqi(input: {
+  projectId: string;
+}): Promise<ProjectSqiResult> {
+  const connection = await YandexConnectionRepository.getByProjectId(
+    input.projectId,
+  );
+  if (!connection) {
+    return {
+      connected: false,
+      hostUrl: null,
+      sqi: null,
+      unavailableReason: null,
+    };
+  }
+
+  const cacheKey = await buildCacheKey("domain:sqi", {
+    projectId: input.projectId,
+    hostId: connection.hostId,
+  });
+  const cached = projectSqiCacheSchema.safeParse(await getCached(cacheKey));
+  if (cached.success) {
+    return {
+      connected: true,
+      hostUrl: connection.hostUrl,
+      sqi: cached.data.sqi,
+      unavailableReason: null,
+    };
+  }
+
+  try {
+    const sqi = await createYandexWebmasterClient({
+      userId: connection.connectedByUserId,
+      yandexAccountId: connection.yandexAccountId ?? undefined,
+    }).getSqi(connection.hostId);
+    waitUntil(
+      setCached(
+        cacheKey,
+        { sqi, fetchedAt: new Date().toISOString() },
+        PROJECT_SQI_TTL_SECONDS,
+      ).catch((error) => {
+        console.error("domain.sqi.cache-write failed:", error);
+      }),
+    );
+    return {
+      connected: true,
+      hostUrl: connection.hostUrl,
+      sqi,
+      unavailableReason: null,
+    };
+  } catch (error) {
+    // A dead grant surfaces as disconnected with the reason — the number
+    // would silently stop moving otherwise.
+    if (isExpectedGrantFailure(error)) {
+      return {
+        connected: false,
+        hostUrl: connection.hostUrl,
+        sqi: null,
+        unavailableReason:
+          error instanceof Error ? error.message : String(error),
+      };
+    }
+    throw error;
+  }
+}
+
 /** A snapshot older than this is considered stale and refreshed on demand. */
 const DOMAIN_RATING_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -268,4 +355,5 @@ export const DomainService = {
   getKeywordsPage,
   getPagesPage,
   getProjectDomainRating,
+  getProjectSqi,
 } as const;
