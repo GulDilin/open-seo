@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AppError } from "@/server/lib/errors";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 
 const mocks = vi.hoisted(() => ({
@@ -57,6 +58,9 @@ describe("serper-backed snapshots", () => {
       billingCustomer,
     );
 
+    expect(mocks.resolveSerpProvider).toHaveBeenCalledWith("google", {
+      cityLevel: false,
+    });
     expect(mocks.serperSnapshotItems).toHaveBeenCalledWith({
       keyword: "seo tools",
       country: "us",
@@ -74,6 +78,9 @@ describe("serper-backed snapshots", () => {
   });
 
   it("keeps city-level requests on the DataForSEO path", async () => {
+    // The real resolver answers city-level google with the incumbent only
+    // (CITY_GOOGLE_CHAIN, covered in routing.test.ts).
+    mocks.resolveSerpProvider.mockResolvedValue("dataforseo");
     mocks.createDataforseoClient.mockReturnValue({
       serp: { live: vi.fn().mockResolvedValue([]) },
     });
@@ -83,8 +90,27 @@ describe("serper-backed snapshots", () => {
       billingCustomer,
     );
 
+    expect(mocks.resolveSerpProvider).toHaveBeenCalledWith("google", {
+      cityLevel: true,
+    });
     expect(mocks.serperSnapshotItems).not.toHaveBeenCalled();
     expect(mocks.createDataforseoClient).toHaveBeenCalled();
+  });
+
+  it("surfaces the resolver's error instead of a metered fallback when no provider is configured", async () => {
+    mocks.resolveSerpProvider.mockRejectedValue(
+      new AppError(
+        "UPSTREAM_UNAVAILABLE",
+        'No SERP provider configured for engine "google". Set one of: SERPER_API_KEY, DATAFORSEO_API_KEY.',
+      ),
+    );
+
+    await expect(
+      getSerpAnalysis({ ...input, depth: 20 }, billingCustomer),
+    ).rejects.toThrow("No SERP provider configured");
+
+    expect(mocks.createDataforseoClient).not.toHaveBeenCalled();
+    expect(mocks.serperSnapshotItems).not.toHaveBeenCalled();
   });
 });
 

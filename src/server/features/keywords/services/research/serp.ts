@@ -104,14 +104,16 @@ async function getSerpLiveAnalysis(
     return cached.data;
   }
 
-  // The active google provider serves the snapshot: Serper when its key is
-  // set (provider chain order), the incumbent otherwise. Same cache either
-  // way — depth lives in the value, not the key. City-level requests always
-  // take the incumbent: they need sub-country geo, which Serper cannot serve
-  // (decisions §5).
-  const googleProvider = input.locationName
-    ? "dataforseo"
-    : await resolveSerpProvider("google").catch(() => "dataforseo");
+  // The resolved google provider serves the snapshot: Serper when its key is
+  // set (provider chain order), the incumbent only for city-level requests,
+  // which need sub-country geo Serper cannot serve (decisions §5). Same
+  // cache either way — depth lives in the value, not the key. With no
+  // configured provider the resolver throws naming the missing credentials
+  // (the panel surfaces the error); it must not fall through to a metered
+  // DataForSEO call on a deployment that deliberately left it unconfigured.
+  const googleProvider = await resolveSerpProvider("google", {
+    cityLevel: !!input.locationName,
+  });
 
   let items: SerpResultItem[];
   if (googleProvider === "serper") {
