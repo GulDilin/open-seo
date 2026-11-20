@@ -1,12 +1,10 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Area, AreaChart } from "recharts";
 import { Monitor, Smartphone } from "lucide-react";
 import {
   getRankTrackingConfigSummaries,
   getRankProjectSummary,
   getRankProjectTrend,
-  type RankProjectSummary,
 } from "@/serverFunctions/rank-tracking";
 import { QueryState } from "@/client/components/QueryState";
 import { SegmentedToggle } from "@/client/components/SegmentedToggle";
@@ -18,17 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/client/components/ui/select";
-import {
-  ChartGrid,
-  ChartXAxis,
-  ChartYAxis,
-} from "@/client/components/ChartAxes";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/client/components/ui/chart";
 import { LOCATIONS } from "@/client/features/keywords/locations";
 import { formatLocationLabel } from "@/shared/keyword-locations";
 import {
@@ -36,32 +23,11 @@ import {
   SEARCH_ENGINES,
   type SearchEngine,
 } from "@/shared/search-engines";
+import { TrendRangeToggle } from "./RankTrackingTrendChart";
 import {
-  formatDateLabel,
-  TIME_AXIS,
-  TrendEmptyState,
-  TrendRangeToggle,
-} from "./RankTrackingTrendChart";
-
-const BUCKETS = [
-  { key: "top1", label: "Top 1", color: "#15803d" },
-  { key: "top2to5", label: "2–5", color: "#16a34a" },
-  { key: "top6to10", label: "6–10", color: "#2563eb" },
-  { key: "top11to50", label: "11–50", color: "#f59e0b" },
-  { key: "notInTop50", label: "Not in top 50", color: "#6b7280" },
-  // Missing data, not a ranking: lighter fill so it doesn't read as lost
-  // positions.
-  {
-    key: "notChecked",
-    label: "Not checked",
-    color: "#d1d5db",
-    hint: "Check failed, no position recorded.",
-  },
-] as const;
-
-const chartConfig: ChartConfig = Object.fromEntries(
-  BUCKETS.map((b) => [b.key, { label: b.label, color: b.color }]),
-);
+  RankVisibilityChart,
+  RankVisibilityTiles,
+} from "./RankVisibilityChart";
 
 // Sentinel for "no filter"; never leaves the component.
 const ALL = "ALL";
@@ -190,15 +156,6 @@ export function RankTrackingProjectOverview({
       }),
   });
 
-  const chartData = useMemo(
-    () =>
-      (trendQuery.data ?? []).map((point) => ({
-        checkedAt: Date.parse(`${point.day}T00:00:00Z`),
-        ...point,
-      })),
-    [trendQuery.data],
-  );
-
   // No trackers yet — the card is noise next to the add-domain call to
   // action. A failed configs fetch also hides the card: the domain list
   // below shares the query and shows the error state.
@@ -288,7 +245,7 @@ export function RankTrackingProjectOverview({
         errorFallback="Failed to load visibility summary"
         loading={<Skeleton className="h-[76px] w-full" />}
       >
-        {(summary) => <VisibilityTiles point={summary} />}
+        {(summary) => <RankVisibilityTiles point={summary} />}
       </QueryState>
 
       <QueryState
@@ -296,71 +253,8 @@ export function RankTrackingProjectOverview({
         errorFallback="Failed to load visibility history"
         loading={<Skeleton className="h-[220px] w-full" />}
       >
-        {() =>
-          chartData.length <= 1 ? (
-            <TrendEmptyState checks={chartData.length} />
-          ) : (
-            <ChartContainer config={chartConfig} className="h-[220px]">
-              <AreaChart
-                data={chartData}
-                margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
-              >
-                <ChartGrid />
-                <ChartXAxis {...TIME_AXIS} />
-                <ChartYAxis allowDecimals={false} width={28} />
-                <ChartTooltip
-                  content={
-                    <ChartTooltipContent labelFormatter={formatDateLabel} />
-                  }
-                />
-                {BUCKETS.map((b) => (
-                  <Area
-                    key={b.key}
-                    type="monotone"
-                    dataKey={b.key}
-                    stackId="positions"
-                    stroke={`var(--color-${b.key})`}
-                    fill={`var(--color-${b.key})`}
-                    fillOpacity={0.7}
-                    isAnimationActive={false}
-                  />
-                ))}
-              </AreaChart>
-            </ChartContainer>
-          )
-        }
+        {(trend) => <RankVisibilityChart points={trend} />}
       </QueryState>
-    </div>
-  );
-}
-
-/** Cumulative keys.so-style counters derived from the disjoint buckets of the
- *  current state. */
-function VisibilityTiles({ point }: { point: RankProjectSummary }) {
-  const tiles = [
-    { label: "Top 1", value: point.top1 },
-    { label: "Top 5", value: point.top1 + point.top2to5 },
-    { label: "Top 10", value: point.top1 + point.top2to5 + point.top6to10 },
-    {
-      label: "Top 50",
-      value: point.top1 + point.top2to5 + point.top6to10 + point.top11to50,
-    },
-    { label: "Keywords", value: point.total + point.notChecked },
-    { label: "Pages in search", value: point.pages },
-  ];
-  return (
-    <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-      {tiles.map((tile) => (
-        <div
-          key={tile.label}
-          className="rounded-lg border border-border bg-card px-3 py-2"
-        >
-          <p className="text-xs text-muted-foreground">{tile.label}</p>
-          <p className="text-lg font-semibold tabular-nums">
-            {tile.value.toLocaleString()}
-          </p>
-        </div>
-      ))}
     </div>
   );
 }

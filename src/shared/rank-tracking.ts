@@ -410,3 +410,58 @@ export function scheduleLabel(
 export function devicesCount(devices: RankTrackingConfig["devices"]): number {
   return devices === "both" ? 2 : 1;
 }
+
+// ---------------------------------------------------------------------------
+// Project visibility summary
+// ---------------------------------------------------------------------------
+
+/** One day of the project visibility chart: buckets summed across the
+ *  in-scope trackers' runs of that day. */
+export interface RankProjectTrendPoint {
+  day: string;
+  total: number;
+  pages: number;
+  top1: number;
+  top2to5: number;
+  top6to10: number;
+  top11to50: number;
+  notInTop50: number;
+  notChecked: number;
+}
+
+/** A trend point without its day — the shape the summary tiles take. */
+export type RankProjectSummary = Omit<RankProjectTrendPoint, "day">;
+
+/** SQLite aggregates can come back as strings; normalize once. */
+export function toCount(value: unknown): number {
+  return Number(value) || 0;
+}
+
+/** Normalize aggregates and derive the two remainder buckets; shared by the
+ * trend's days and the summary so tiles and charts bucket identically
+ * everywhere they render (tracker dashboard, domain overview). */
+export function toSummaryPoint(row: {
+  total: unknown;
+  pages: unknown;
+  top1: unknown;
+  top2to5: unknown;
+  top6to10: unknown;
+  top11to50: unknown;
+  keywordsTotal: unknown;
+}): RankProjectSummary {
+  const total = toCount(row.total);
+  const top1 = toCount(row.top1);
+  const top2to5 = toCount(row.top2to5);
+  const top6to10 = toCount(row.top6to10);
+  const top11to50 = toCount(row.top11to50);
+  return {
+    total,
+    pages: toCount(row.pages),
+    top1,
+    top2to5,
+    top6to10,
+    top11to50,
+    notInTop50: Math.max(0, total - top1 - top2to5 - top6to10 - top11to50),
+    notChecked: Math.max(0, toCount(row.keywordsTotal) - total),
+  };
+}
