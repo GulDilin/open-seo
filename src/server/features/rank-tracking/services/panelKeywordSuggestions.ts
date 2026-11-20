@@ -1,5 +1,6 @@
 import { normalizeDomain } from "@/types/schemas/domain";
 import { GscService } from "@/server/features/gsc/services/GscService";
+import { GSC_MAX_ROW_LIMIT } from "@/server/features/gsc/searchAnalytics";
 import { YandexWebmasterService } from "@/server/features/yandex/services/YandexWebmasterService";
 import { RankTrackingRepository } from "@/server/features/rank-tracking/repositories/RankTrackingRepository";
 
@@ -30,6 +31,11 @@ async function fetchGscQueries(
     dimensions: ["query"],
     dateRange: "last_28_days",
     dataState: "final",
+    // The pool ranks by impressions, but GSC returns rows ordered by clicks —
+    // a click-sorted page hides high-impression queries. Pull the max so the
+    // impressions ranking sees the full picture and subtracting already-tracked
+    // keywords still leaves enough candidates to fill the import cap (300).
+    rowLimit: GSC_MAX_ROW_LIMIT,
   });
   return result.rows.flatMap((row) => {
     const query = row.keys?.[0];
@@ -54,6 +60,9 @@ async function fetchYandexQueries(
     projectId,
     dateRange: "last_28_days",
     orderBy: "impressions",
+    // Only the query rows matter here; the previous-window comparison doubles
+    // the popular-queries pages per sync for cards the pool never shows.
+    includeChange: false,
   });
   return result.rows.map((row) => ({
     query: row.query,
