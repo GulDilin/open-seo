@@ -417,9 +417,7 @@ function RankTrackingConfigModalContent({
                     <Switch
                       id="auto-keyword-import"
                       checked={Boolean(field.state.value)}
-                      onCheckedChange={(checked) =>
-                        field.handleChange(checked)
-                      }
+                      onCheckedChange={(checked) => field.handleChange(checked)}
                     />
                   )}
                 </form.Field>

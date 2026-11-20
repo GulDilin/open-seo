@@ -144,9 +144,7 @@ function YandexSitePicker({
   );
   // A failed hosts call must not read as "the account has no sites" — that
   // sends the user to webmaster.yandex.ru for a list Yandex never returned.
-  const sitesUnavailable = accounts.some(
-    (account) => account.sitesUnavailable,
-  );
+  const sitesUnavailable = accounts.some((account) => account.sitesUnavailable);
 
   return (
     <fieldset disabled={changing} className="space-y-3">

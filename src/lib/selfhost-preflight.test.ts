@@ -195,8 +195,6 @@ describe("runSelfhostPreflight", () => {
   it("offers oauth as an alternative in the cloudflare_access failure hint", () => {
     const result = runSelfhostPreflight({});
 
-    expect(itemFor(result, "AUTH_MODE")?.message).toContain(
-      "AUTH_MODE=oauth",
-    );
+    expect(itemFor(result, "AUTH_MODE")?.message).toContain("AUTH_MODE=oauth");
   });
 });

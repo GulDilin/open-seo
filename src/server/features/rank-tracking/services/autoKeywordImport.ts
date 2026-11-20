@@ -60,10 +60,7 @@ async function syncKey(configs: AutoImportConfig[]): Promise<number> {
       });
       perSource.set(source, suggestions);
     } catch (error) {
-      console.error(
-        `[auto-import] ${source} suggestions fetch failed:`,
-        error,
-      );
+      console.error(`[auto-import] ${source} suggestions fetch failed:`, error);
     }
   }
 
@@ -122,9 +119,7 @@ export async function syncAutoImportedKeywords(
   }
 
   const settled = await Promise.allSettled(
-    [...byKey.values()]
-      .slice(0, maxKeys)
-      .map((group) => syncKey(group)),
+    [...byKey.values()].slice(0, maxKeys).map((group) => syncKey(group)),
   );
   let added = 0;
   for (const outcome of settled) {

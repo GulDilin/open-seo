@@ -393,7 +393,8 @@ describe("runScheduledRankChecks", () => {
       [expect.objectContaining({ id: "config_1", autoKeywordImport: true })],
       25,
     );
-    const syncOrder = mocks.syncAutoImportedKeywords.mock.invocationCallOrder[0];
+    const syncOrder =
+      mocks.syncAutoImportedKeywords.mock.invocationCallOrder[0];
     const countOrder =
       mocks.getKeywordCountsForConfigs.mock.invocationCallOrder[0];
     expect(syncOrder).toBeLessThan(countOrder);

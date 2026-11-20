@@ -300,12 +300,14 @@ async function removeKeywordsFromConfig(
   // Snapshots have no FK to their keyword — delete them with it, or the last
   // position of a removed keyword keeps surfacing in aggregates as a ghost.
   for (let i = 0; i < removedIds.length; i += deleteBatchSize) {
-    await db.delete(rankSnapshots).where(
-      inArray(
-        rankSnapshots.trackingKeywordId,
-        removedIds.slice(i, i + deleteBatchSize),
-      ),
-    );
+    await db
+      .delete(rankSnapshots)
+      .where(
+        inArray(
+          rankSnapshots.trackingKeywordId,
+          removedIds.slice(i, i + deleteBatchSize),
+        ),
+      );
   }
   return removedIds;
 }

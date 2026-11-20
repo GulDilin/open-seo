@@ -136,12 +136,14 @@ describe("brightDataProvider.checkRank", () => {
   });
 
   it("stops after the first bing page when the domain ranks there", async () => {
-    const pages = vi.fn<typeof fetch>().mockResolvedValue(
-      bdResponse([
-        { link: "https://a.example/1" },
-        { link: "https://shop.example.cn/shoes" },
-      ]),
-    );
+    const pages = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        bdResponse([
+          { link: "https://a.example/1" },
+          { link: "https://shop.example.cn/shoes" },
+        ]),
+      );
     vi.stubGlobal("fetch", pages);
 
     await brightDataProvider.checkRank({ ...baseCheck, engine: "bing" });

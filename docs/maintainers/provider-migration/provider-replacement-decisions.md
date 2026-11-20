@@ -6,12 +6,12 @@
 
 ## 1. Почему уходим от DataForSeo
 
-| Проблема | Факт |
-| --- | --- |
-| РФ отключена вендором | DataForSeo удалила Россию (643) и Беларусь из всех API 07.03.2022, РФ-аккаунты не обслуживаются, РФ — restricted jurisdiction в их ToS. РФ-метрики невозможны ни при какой настройке. |
-| Google-only в коде | Весь SERP-слой — `/v3/serp/google/*`; поля «поисковик» нет ни в API, ни в БД. Яндекс/Baidu/Bing не поддерживаются. |
-| Вендор-lock системы координат | Числовые `location_code` DataForSeo в БД (`projects`, `saved_keywords`, `keyword_metrics`, `rank_tracking_configs`, `ai_visibility`) и hardcoded-список стран без РФ и Китая. |
-| Wire-форматы в домене | DataForSeo item-типы (snake_case) импортируют 45 файлов за пределами либы; filter DSL (`["rank,desc"]`) строится в фичевых сервисах. |
+| Проблема                      | Факт                                                                                                                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| РФ отключена вендором         | DataForSeo удалила Россию (643) и Беларусь из всех API 07.03.2022, РФ-аккаунты не обслуживаются, РФ — restricted jurisdiction в их ToS. РФ-метрики невозможны ни при какой настройке. |
+| Google-only в коде            | Весь SERP-слой — `/v3/serp/google/*`; поля «поисковик» нет ни в API, ни в БД. Яндекс/Baidu/Bing не поддерживаются.                                                                    |
+| Вендор-lock системы координат | Числовые `location_code` DataForSeo в БД (`projects`, `saved_keywords`, `keyword_metrics`, `rank_tracking_configs`, `ai_visibility`) и hardcoded-список стран без РФ и Китая.         |
+| Wire-форматы в домене         | DataForSeo item-типы (snake_case) импортируют 45 файлов за пределами либы; filter DSL (`["rank,desc"]`) строится в фичевых сервисах.                                                  |
 
 Требования: rank tracking для заказчиков в Норвегии (Google/Bing), Китае
 (Baidu), РФ (Яндекс); keyword volume по РФ; self-host (метринг отключён —
@@ -66,12 +66,12 @@ export type SearchEngine = "google" | "yandex" | "baidu" | "bing";
 export interface SerpRankCheck {
   keyword: string;
   engine: SearchEngine;
-  country: string;      // ISO 3166-1 alpha-2
-  language: string;     // ISO 639-1 (как в текущем pickers)
-  region?: string;      // регион/город; для Яндекса — id региона из GetRegionsTree
+  country: string; // ISO 3166-1 alpha-2
+  language: string; // ISO 639-1 (как в текущем pickers)
+  region?: string; // регион/город; для Яндекса — id региона из GetRegionsTree
   device: "desktop" | "mobile";
   targetDomain: string;
-  depth: number;        // 10..100
+  depth: number; // 10..100
 }
 
 export interface SerpRankResult {
@@ -101,10 +101,10 @@ export interface KeywordVolumeQuery {
 
 export interface KeywordVolumeRow {
   keyword: string;
-  volume: number | null;      // показов/мес
-  cpc: number | null;         // null у wordstat
+  volume: number | null; // показов/мес
+  cpc: number | null; // null у wordstat
   competition: number | null; // 0..1, null у wordstat
-  difficulty: number | null;  // null у wordstat (как googleAdsOnly-страны)
+  difficulty: number | null; // null у wordstat (как googleAdsOnly-страны)
   source: "wordstat" | "dataforseo" | "ahrefs";
 }
 
@@ -120,10 +120,10 @@ export interface KeywordDataProvider {
 ```ts
 // engine → провайдеры в порядке приоритета
 export const SERP_PROVIDER_CHAIN: Record<SearchEngine, ProviderId[]> = {
-  google:  ["serper", "dataforseo"],
-  yandex:  ["yandex"],
-  baidu:   ["brightdata"],
-  bing:    ["brightdata"],
+  google: ["serper", "dataforseo"],
+  yandex: ["yandex"],
+  baidu: ["brightdata"],
+  bing: ["brightdata"],
 };
 ```
 
@@ -137,11 +137,11 @@ export const SERP_PROVIDER_CHAIN: Record<SearchEngine, ProviderId[]> = {
 
 ### 3.4 Конфигурация
 
-| Переменная | Провайдер | Формат |
-| --- | --- | --- |
-| `SERPER_API_KEY` | Serper | ключ из дашборда serper.dev |
-| `YANDEX_SEARCH_API_KEY` + `YANDEX_FOLDER_ID` | Yandex Search API | API-ключ сервисного аккаунта в Яндекс Облаке + id каталога |
-| `BRIGHTDATA_API_TOKEN` | Bright Data SERP API | токен из панели |
+| Переменная                                   | Провайдер            | Формат                                                     |
+| -------------------------------------------- | -------------------- | ---------------------------------------------------------- |
+| `SERPER_API_KEY`                             | Serper               | ключ из дашборда serper.dev                                |
+| `YANDEX_SEARCH_API_KEY` + `YANDEX_FOLDER_ID` | Yandex Search API    | API-ключ сервисного аккаунта в Яндекс Облаке + id каталога |
+| `BRIGHTDATA_API_TOKEN`                       | Bright Data SERP API | токен из панели                                            |
 
 Все — опциональные; отсутствие = провайдер не сконфигурирован. Обновить
 `runtime-env.ts`, `selfhost-preflight.ts`, `.env.example`, self-hosting доки.
@@ -150,7 +150,7 @@ export const SERP_PROVIDER_CHAIN: Record<SearchEngine, ProviderId[]> = {
 ### 3.5 Схема БД
 
 - `rank_tracking_configs`: колонка `search_engine text not null default
-  'google'`; включить в оба partial unique-индекса из миграции
+'google'`; включить в оба partial unique-индекса из миграции
   `0006_location_name.sql` (национальный: + engine; локальный: + engine).
   Миграции в `drizzle/pg/0038_*` и `drizzle/sqlite/0060_*` (номера даст
   drizzle-kit; руками — одинаковая семантика в обоих диалектах).
@@ -198,13 +198,13 @@ Self-host: метринг отключён (`client.ts` — не-hosted ветк
 
 ### 4.2 Отклонённые альтернативы (и почему)
 
-| Вариант | Вердикт | Причина |
-| --- | --- | --- |
-| Bright Data / SerpApi для Яндекса | ✗ | Нет прокси-выходов из РФ (Bright Data — официально исключённые страны), выдача без РФ-IP не релевантна/капчи |
-| Мутаген API (950 ₽/мес) | ✗ для продукта | Обязательная атрибуция «данные получены из Мутагена» + запрет перепродажи в условиях API. Допустимо для личного использования, не для встраивания |
-| Keys.so / Топвизор | ✗ как data-source | Это готовые инструменты с API к своим отчётам, а не сырые данные; оверлей поверх нашей логики |
-| Serpstat | ✗ | Яндекс-баз больше нет |
-| Парсинг Wordstat своими силами | ✗ | Капчи, прокси, хрупкость; официальный API дешевле сопровождения |
+| Вариант                           | Вердикт           | Причина                                                                                                                                           |
+| --------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bright Data / SerpApi для Яндекса | ✗                 | Нет прокси-выходов из РФ (Bright Data — официально исключённые страны), выдача без РФ-IP не релевантна/капчи                                      |
+| Мутаген API (950 ₽/мес)           | ✗ для продукта    | Обязательная атрибуция «данные получены из Мутагена» + запрет перепродажи в условиях API. Допустимо для личного использования, не для встраивания |
+| Keys.so / Топвизор                | ✗ как data-source | Это готовые инструменты с API к своим отчётам, а не сырые данные; оверлей поверх нашей логики                                                     |
+| Serpstat                          | ✗                 | Яндекс-баз больше нет                                                                                                                             |
+| Парсинг Wordstat своими силами    | ✗                 | Капчи, прокси, хрупкость; официальный API дешевле сопровождения                                                                                   |
 
 ### 4.3 Частотности РФ в продукте
 
@@ -310,10 +310,10 @@ keyword research. Вывод этих ролей — свой проект ка�
 
 ## 10. Риски
 
-| Риск | Смягчение |
-| --- | --- |
+| Риск                                        | Смягчение                                                                                                                                       |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | ToS/блокировка Serper/Bright Data аккаунтов | Официальные API продуктов, а не парсинг; для Bright Data — аккаунт на чистые реквизиты; routing позволяет заменить провайдера без изменения фич |
-| Лимиты Яндекса (RPS, квоты каталога) | Отложенные запросы для scheduled; бюджет-юниты в `scheduledRankChecks` расширены на провайдеров |
-| Google-глубина > 100 у Serper | Ограничить `serpDepth` ≤ 100 для не-dataforseo провайдеров в валидации (глубже 100 — редкий кейс, фиксируем лимитом) |
-| Дрейф качества выдачи (гео, язык) | E2E-сверка выборочных ключей при подключении каждого адаптера (критерий приёмки в задачах) |
-| Разлад UI/серверной доступности engine | Таблица доступности в `src/shared`, обе стороны читают её |
+| Лимиты Яндекса (RPS, квоты каталога)        | Отложенные запросы для scheduled; бюджет-юниты в `scheduledRankChecks` расширены на провайдеров                                                 |
+| Google-глубина > 100 у Serper               | Ограничить `serpDepth` ≤ 100 для не-dataforseo провайдеров в валидации (глубже 100 — редкий кейс, фиксируем лимитом)                            |
+| Дрейф качества выдачи (гео, язык)           | E2E-сверка выборочных ключей при подключении каждого адаптера (критерий приёмки в задачах)                                                      |
+| Разлад UI/серверной доступности engine      | Таблица доступности в `src/shared`, обе стороны читают её                                                                                       |

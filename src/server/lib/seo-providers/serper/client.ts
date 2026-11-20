@@ -140,8 +140,7 @@ export async function serperSearch(input: {
         ...item,
         // Serper's per-page `position` is relative to that page, so offset it
         // into a cross-page rank; array order is the fallback.
-        position:
-          (page - 1) * RESULTS_PER_PAGE + (item.position ?? index + 1),
+        position: (page - 1) * RESULTS_PER_PAGE + (item.position ?? index + 1),
       })),
     );
     if (

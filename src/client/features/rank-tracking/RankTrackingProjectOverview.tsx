@@ -110,8 +110,7 @@ export function RankTrackingProjectOverview({
   const configs = configsQuery.data ?? [];
 
   const engines = [...new Set(configs.map((config) => config.searchEngine))];
-  const engineValue =
-    engine !== ALL && engines.includes(engine) ? engine : ALL;
+  const engineValue = engine !== ALL && engines.includes(engine) ? engine : ALL;
   const scopedConfigs = configs.filter(
     (config) => engineValue === ALL || config.searchEngine === engineValue,
   );

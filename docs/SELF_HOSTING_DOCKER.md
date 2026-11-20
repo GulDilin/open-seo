@@ -81,12 +81,12 @@ OAUTH_SIGNIN_CLIENT_SECRET=
 Register a client on your IdP with the redirect URI
 `<BETTER_AUTH_URL>/api/auth/oauth2/callback/sso`. Common issuer URLs:
 
-| Provider | Issuer (`OAUTH_SIGNIN_ISSUER`) |
-| --- | --- |
-| Keycloak | `https://<host>/realms/<realm>` |
+| Provider  | Issuer (`OAUTH_SIGNIN_ISSUER`)        |
+| --------- | ------------------------------------- |
+| Keycloak  | `https://<host>/realms/<realm>`       |
 | Authentik | `https://<host>/application/o/<slug>` |
-| Google | `https://accounts.google.com` |
-| Auth0 | `https://<tenant>.<region>.auth0.com` |
+| Google    | `https://accounts.google.com`         |
+| Auth0     | `https://<tenant>.<region>.auth0.com` |
 
 Restart with `docker compose up -d`. The startup preflight names exactly what is missing when a value is absent, and the instance serves no data to anyone until the configuration is complete.
 

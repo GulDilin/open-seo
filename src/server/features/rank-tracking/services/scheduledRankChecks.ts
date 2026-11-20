@@ -64,10 +64,7 @@ export async function runScheduledRankChecks(env: Env) {
   if (autoImportConfigs.length > 0) {
     try {
       autoImported = await Promise.race([
-        syncAutoImportedKeywords(
-          autoImportConfigs,
-          AUTO_IMPORT_KEYS_PER_TICK,
-        ),
+        syncAutoImportedKeywords(autoImportConfigs, AUTO_IMPORT_KEYS_PER_TICK),
         new Promise<number>((resolve) =>
           setTimeout(() => resolve(0), AUTO_IMPORT_TIMEOUT_MS),
         ),

@@ -248,9 +248,7 @@ export const rankTrackingConfigs = pgTable(
       .default("weekly"),
     locationName: text("location_name"),
     // Mirrors sqlite: opt-in panel keyword auto-import per tracker.
-    autoKeywordImport: boolean("auto_keyword_import")
-      .notNull()
-      .default(false),
+    autoKeywordImport: boolean("auto_keyword_import").notNull().default(false),
     isActive: boolean("is_active").notNull().default(true),
     lastCheckedAt: timestampColumn("last_checked_at"),
     nextCheckAt: timestampColumn("next_check_at"),
@@ -575,10 +573,7 @@ export const indexStatusPages = pgTable(
     lastSeenAt: text("last_seen_at").notNull(),
   },
   (table) => [
-    uniqueIndex("index_status_pages_url_unique").on(
-      table.projectId,
-      table.url,
-    ),
+    uniqueIndex("index_status_pages_url_unique").on(table.projectId, table.url),
   ],
 );
 

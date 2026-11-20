@@ -78,7 +78,10 @@ describe("WebmasterBacklinksRepository snapshots", () => {
       { date: "2026-01-08", linksTotalCount: 15 },
     ]);
     expect(
-      await WebmasterBacklinksRepository.lastCollectedAt("p1", "yandex_webmaster"),
+      await WebmasterBacklinksRepository.lastCollectedAt(
+        "p1",
+        "yandex_webmaster",
+      ),
     ).toBe("2026-01-09T10:00:00.000Z");
   });
 
@@ -90,13 +93,24 @@ describe("WebmasterBacklinksRepository snapshots", () => {
     });
     await WebmasterBacklinksRepository.saveSnapshots(rows);
     await WebmasterBacklinksRepository.saveSnapshots([
-      { ...snapshot("2026-01-01", 1, "2026-01-01T00:00:00.000Z"), projectId: "p2" },
+      {
+        ...snapshot("2026-01-01", 1, "2026-01-01T00:00:00.000Z"),
+        projectId: "p2",
+      },
     ]);
 
     expect(
-      (await WebmasterBacklinksRepository.listSnapshots("p2", "yandex_webmaster")).length,
+      (
+        await WebmasterBacklinksRepository.listSnapshots(
+          "p2",
+          "yandex_webmaster",
+        )
+      ).length,
     ).toBe(1);
-    const p1 = await WebmasterBacklinksRepository.listSnapshots("p1", "yandex_webmaster");
+    const p1 = await WebmasterBacklinksRepository.listSnapshots(
+      "p1",
+      "yandex_webmaster",
+    );
     // The 365 latest points, oldest first: day 5 through day 369.
     expect(p1.length).toBe(365);
     expect(p1[0].date).toBe("2024-01-06");
@@ -107,14 +121,28 @@ describe("WebmasterBacklinksRepository snapshots", () => {
 describe("WebmasterBacklinksRepository samples", () => {
   it("upserts by (project, sourceUrl, destinationUrl), preserving firstSeenAt and moving lastSeenAt", async () => {
     await WebmasterBacklinksRepository.saveSamples([
-      sample("https://a.example/", "https://site.example/x", "2026-01-01T00:00:00.000Z"),
+      sample(
+        "https://a.example/",
+        "https://site.example/x",
+        "2026-01-01T00:00:00.000Z",
+      ),
     ]);
     await WebmasterBacklinksRepository.saveSamples([
-      sample("https://a.example/", "https://site.example/x", "2026-02-01T00:00:00.000Z"),
-      sample("https://b.example/", "https://site.example/y", "2026-02-01T00:00:00.000Z"),
+      sample(
+        "https://a.example/",
+        "https://site.example/x",
+        "2026-02-01T00:00:00.000Z",
+      ),
+      sample(
+        "https://b.example/",
+        "https://site.example/y",
+        "2026-02-01T00:00:00.000Z",
+      ),
     ]);
 
-    expect(await WebmasterBacklinksRepository.countSamples("p1", "yandex_webmaster")).toBe(2);
+    expect(
+      await WebmasterBacklinksRepository.countSamples("p1", "yandex_webmaster"),
+    ).toBe(2);
     const rows = await WebmasterBacklinksRepository.listSamples(
       "p1",
       "yandex_webmaster",
@@ -127,9 +155,11 @@ describe("WebmasterBacklinksRepository samples", () => {
     ]);
     // firstSeenAt survives re-observation; lastSeenAt moves.
     expect(
-      state.database!.prepare(
-        "SELECT first_seen_at, last_seen_at FROM webmaster_backlink_samples WHERE source_url = 'https://a.example/'",
-      ).get(),
+      state
+        .database!.prepare(
+          "SELECT first_seen_at, last_seen_at FROM webmaster_backlink_samples WHERE source_url = 'https://a.example/'",
+        )
+        .get(),
     ).toEqual({
       first_seen_at: "2026-01-01T00:00:00.000Z",
       last_seen_at: "2026-02-01T00:00:00.000Z",
@@ -138,9 +168,30 @@ describe("WebmasterBacklinksRepository samples", () => {
 
   it("sorts samples with null discovery dates last and respects the limit", async () => {
     await WebmasterBacklinksRepository.saveSamples([
-      { ...sample("https://newest.example/", "https://site.example/", "2026-01-01T00:00:00.000Z"), discoveryDate: "2026-03-01" },
-      { ...sample("https://older.example/", "https://site.example/", "2026-01-01T00:00:00.000Z"), discoveryDate: "2026-02-01" },
-      { ...sample("https://unknown.example/", "https://site.example/", "2026-01-01T00:00:00.000Z"), discoveryDate: null },
+      {
+        ...sample(
+          "https://newest.example/",
+          "https://site.example/",
+          "2026-01-01T00:00:00.000Z",
+        ),
+        discoveryDate: "2026-03-01",
+      },
+      {
+        ...sample(
+          "https://older.example/",
+          "https://site.example/",
+          "2026-01-01T00:00:00.000Z",
+        ),
+        discoveryDate: "2026-02-01",
+      },
+      {
+        ...sample(
+          "https://unknown.example/",
+          "https://site.example/",
+          "2026-01-01T00:00:00.000Z",
+        ),
+        discoveryDate: null,
+      },
     ]);
 
     const rows = await WebmasterBacklinksRepository.listSamples(
@@ -161,11 +212,21 @@ describe("WebmasterBacklinksRepository samples", () => {
   });
 
   it("removes snapshots and samples when their project is deleted", async () => {
-    await WebmasterBacklinksRepository.saveSnapshots([snapshot("2026-01-01", 5, "2026-01-01T00:00:00.000Z")]);
-    await WebmasterBacklinksRepository.saveSamples([sample("https://a.example/", "https://site.example/x", "2026-01-01T00:00:00.000Z")]);
+    await WebmasterBacklinksRepository.saveSnapshots([
+      snapshot("2026-01-01", 5, "2026-01-01T00:00:00.000Z"),
+    ]);
+    await WebmasterBacklinksRepository.saveSamples([
+      sample(
+        "https://a.example/",
+        "https://site.example/x",
+        "2026-01-01T00:00:00.000Z",
+      ),
+    ]);
     state.database!.exec("DELETE FROM projects WHERE id = 'p1'");
     expect(
-      state.database!.prepare("SELECT * FROM webmaster_backlink_snapshots").all(),
+      state
+        .database!.prepare("SELECT * FROM webmaster_backlink_snapshots")
+        .all(),
     ).toEqual([]);
     expect(
       state.database!.prepare("SELECT * FROM webmaster_backlink_samples").all(),

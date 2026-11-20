@@ -1,7 +1,10 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { reverse } from "remeda";
 import { db } from "@/db";
-import { webmasterBacklinkSamples, webmasterBacklinkSnapshots } from "@/db/schema";
+import {
+  webmasterBacklinkSamples,
+  webmasterBacklinkSnapshots,
+} from "@/db/schema";
 
 type WebmasterBacklinkSource = "yandex_webmaster";
 
@@ -82,7 +85,10 @@ async function listSnapshots(
   source: WebmasterBacklinkSource,
 ): Promise<Array<{ date: string; linksTotalCount: number }>> {
   const rows = await db
-    .select({ date: webmasterBacklinkSnapshots.date, linksTotalCount: webmasterBacklinkSnapshots.linksTotalCount })
+    .select({
+      date: webmasterBacklinkSnapshots.date,
+      linksTotalCount: webmasterBacklinkSnapshots.linksTotalCount,
+    })
     .from(webmasterBacklinkSnapshots)
     .where(
       and(
@@ -108,24 +114,26 @@ async function listSamples(
     sourceLastAccessDate: string | null;
   }>
 > {
-  return db
-    .select({
-      sourceUrl: webmasterBacklinkSamples.sourceUrl,
-      destinationUrl: webmasterBacklinkSamples.destinationUrl,
-      discoveryDate: webmasterBacklinkSamples.discoveryDate,
-      sourceLastAccessDate: webmasterBacklinkSamples.sourceLastAccessDate,
-    })
-    .from(webmasterBacklinkSamples)
-    .where(
-      and(
-        eq(webmasterBacklinkSamples.projectId, projectId),
-        eq(webmasterBacklinkSamples.source, source),
-      ),
-    )
-    // Nulls last in both dialects: desc over "date < null" keeps SQLite's
-    // NULLS-last default and matches Postgres only when expressed explicitly.
-    .orderBy(sql`${webmasterBacklinkSamples.discoveryDate} desc nulls last`)
-    .limit(limit);
+  return (
+    db
+      .select({
+        sourceUrl: webmasterBacklinkSamples.sourceUrl,
+        destinationUrl: webmasterBacklinkSamples.destinationUrl,
+        discoveryDate: webmasterBacklinkSamples.discoveryDate,
+        sourceLastAccessDate: webmasterBacklinkSamples.sourceLastAccessDate,
+      })
+      .from(webmasterBacklinkSamples)
+      .where(
+        and(
+          eq(webmasterBacklinkSamples.projectId, projectId),
+          eq(webmasterBacklinkSamples.source, source),
+        ),
+      )
+      // Nulls last in both dialects: desc over "date < null" keeps SQLite's
+      // NULLS-last default and matches Postgres only when expressed explicitly.
+      .orderBy(sql`${webmasterBacklinkSamples.discoveryDate} desc nulls last`)
+      .limit(limit)
+  );
 }
 
 async function countSamples(

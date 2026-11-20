@@ -118,10 +118,7 @@ describe("serperSearch pagination", () => {
         ]),
       )
       .mockResolvedValueOnce(
-        serperPageResponse([
-          "https://d.example/4",
-          "https://target.example/5",
-        ]),
+        serperPageResponse(["https://d.example/4", "https://target.example/5"]),
       );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -146,9 +143,11 @@ describe("serperSearch pagination", () => {
   });
 
   it("makes a single request when the domain ranks on the first page", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      serperPageResponse(["https://a.example/1", "https://target.example/2"]),
-    );
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        serperPageResponse(["https://a.example/1", "https://target.example/2"]),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     await serperSearch({

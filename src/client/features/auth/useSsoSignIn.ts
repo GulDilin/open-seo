@@ -29,7 +29,8 @@ export function useSsoSignIn({ redirectTo }: { redirectTo: string }) {
     setIsStarting(false);
   }
 
-  const fallbackMessage = "Sign-in is not available right now. Please try again.";
+  const fallbackMessage =
+    "Sign-in is not available right now. Please try again.";
 
   return { isStarting, error, start };
 }

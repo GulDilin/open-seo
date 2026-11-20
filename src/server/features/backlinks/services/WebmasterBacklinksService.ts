@@ -167,8 +167,7 @@ async function getBacklinks(input: {
         unavailableReason =
           error instanceof Error ? error.message : String(error);
       } else {
-        collectError =
-          error instanceof Error ? error.message : String(error);
+        collectError = error instanceof Error ? error.message : String(error);
         console.error("webmaster_backlinks_collect_failed", {
           projectId: input.projectId,
           reason: collectError,
@@ -193,26 +192,28 @@ async function getBacklinks(input: {
     };
   }
 
-  const [history, samples, storedSamplesCount, collectedAt] = await Promise.all([
-    WebmasterBacklinksRepository.listSnapshots(
-      input.projectId,
-      "yandex_webmaster",
-    ),
-    WebmasterBacklinksRepository.listSamples(
-      input.projectId,
-      "yandex_webmaster",
-      SAMPLES_PAGE_LIMIT,
-    ),
-    WebmasterBacklinksRepository.countSamples(
-      input.projectId,
-      "yandex_webmaster",
-    ),
-    // Re-read: a collect above may have just written fresh rows.
-    WebmasterBacklinksRepository.lastCollectedAt(
-      input.projectId,
-      "yandex_webmaster",
-    ),
-  ]);
+  const [history, samples, storedSamplesCount, collectedAt] = await Promise.all(
+    [
+      WebmasterBacklinksRepository.listSnapshots(
+        input.projectId,
+        "yandex_webmaster",
+      ),
+      WebmasterBacklinksRepository.listSamples(
+        input.projectId,
+        "yandex_webmaster",
+        SAMPLES_PAGE_LIMIT,
+      ),
+      WebmasterBacklinksRepository.countSamples(
+        input.projectId,
+        "yandex_webmaster",
+      ),
+      // Re-read: a collect above may have just written fresh rows.
+      WebmasterBacklinksRepository.lastCollectedAt(
+        input.projectId,
+        "yandex_webmaster",
+      ),
+    ],
+  );
 
   return {
     yandex: {

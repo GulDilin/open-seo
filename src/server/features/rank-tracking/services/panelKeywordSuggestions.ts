@@ -145,17 +145,16 @@ async function get(input: {
   });
 
   const tracked = new Set(
-    (
-      input.subtract === "domain" && input.domain
-        ? // Domain-scoped subtraction: a query another domain already tracks
-          // must not block THIS domain's auto-import.
-          await RankTrackingRepository.getKeywordsForActiveConfigs(
-            input.projectId,
-            input.domain,
-          )
-        : await RankTrackingRepository.getKeywordsForActiveConfigs(
-            input.projectId,
-          )
+    (input.subtract === "domain" && input.domain
+      ? // Domain-scoped subtraction: a query another domain already tracks
+        // must not block THIS domain's auto-import.
+        await RankTrackingRepository.getKeywordsForActiveConfigs(
+          input.projectId,
+          input.domain,
+        )
+      : await RankTrackingRepository.getKeywordsForActiveConfigs(
+          input.projectId,
+        )
     ).map((kw) => kw.keyword.trim().toLowerCase()),
   );
 

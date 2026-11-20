@@ -475,7 +475,12 @@ describe("getProjectTrend", () => {
       snapshots: [
         { keywordId: "y_kw1", position: 3, url: "https://s/c" },
         // A mobile row never leaks into the desktop trend.
-        { keywordId: "y_kw1", device: "mobile", position: 2, url: "https://s/m" },
+        {
+          keywordId: "y_kw1",
+          device: "mobile",
+          position: 2,
+          url: "https://s/m",
+        },
       ],
     });
     await seedTrendRun({

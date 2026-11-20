@@ -1,7 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Line, LineChart } from "recharts";
 import { QueryError } from "@/client/components/QueryState";
-import { ChartGrid, ChartXAxis, ChartYAxis } from "@/client/components/ChartAxes";
+import {
+  ChartGrid,
+  ChartXAxis,
+  ChartYAxis,
+} from "@/client/components/ChartAxes";
 import {
   Card,
   CardContent,
@@ -18,7 +22,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/client/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/client/components/ui/tabs";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/client/components/ui/tabs";
 import {
   ChartContainer,
   ChartTooltip,
@@ -57,7 +66,8 @@ function LatestCountStat({
   previous: { date: string; linksTotalCount: number } | null;
 }) {
   let delta: number | null = null;
-  if (latest && previous) delta = latest.linksTotalCount - previous.linksTotalCount;
+  if (latest && previous)
+    delta = latest.linksTotalCount - previous.linksTotalCount;
   return (
     <div className="rounded-lg border border-border bg-card px-3 py-2">
       <p className="text-xs text-muted-foreground">
@@ -134,10 +144,16 @@ function YandexPanel({
           className="h-48"
           aria-label="External links history"
         >
-          <LineChart data={data.history} margin={{ left: 8, right: 8, top: 8, bottom: 0 }}>
+          <LineChart
+            data={data.history}
+            margin={{ left: 8, right: 8, top: 8, bottom: 0 }}
+          >
             <ChartGrid />
             <ChartXAxis dataKey="date" minTickGap={32} />
-            <ChartYAxis tickFormatter={(value) => Number(value).toLocaleString()} width={56} />
+            <ChartYAxis
+              tickFormatter={(value) => Number(value).toLocaleString()}
+              width={56}
+            />
             <ChartTooltip content={<ChartTooltipContent />} />
             <Line
               type="monotone"
@@ -200,7 +216,11 @@ function YandexPanel({
   );
 }
 
-function GscPanel({ data }: { data: { connected: boolean; siteUrl: string | null } }) {
+function GscPanel({
+  data,
+}: {
+  data: { connected: boolean; siteUrl: string | null };
+}) {
   return (
     <div className="max-w-2xl space-y-2 text-sm text-muted-foreground">
       {data.connected ? (
@@ -226,7 +246,11 @@ function GscPanel({ data }: { data: { connected: boolean; siteUrl: string | null
 /** Webmaster-sourced external links: collected snapshots and samples from the
  *  project's connected webmaster tools, rendered above the DataForSEO-powered
  *  research below. Free first-party data — shown even without DataForSEO. */
-export function WebmasterBacklinksSection({ projectId }: { projectId: string }) {
+export function WebmasterBacklinksSection({
+  projectId,
+}: {
+  projectId: string;
+}) {
   const query = useQuery({
     queryKey: ["webmasterBacklinks", projectId],
     queryFn: () => getWebmasterBacklinks({ data: { projectId } }),

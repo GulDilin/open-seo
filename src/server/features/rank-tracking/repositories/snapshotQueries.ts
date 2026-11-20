@@ -252,11 +252,13 @@ type ProjectTrendFilters = {
  * the snapshot count. The buckets/pages aggregate snapshots; the totals
  * aggregate one row per run; this function merges them by day.
  */
-export async function getProjectTrend(input: {
-  projectId: string;
-  device: "desktop" | "mobile";
-  sinceDays: number;
-} & ProjectTrendFilters) {
+export async function getProjectTrend(
+  input: {
+    projectId: string;
+    device: "desktop" | "mobile";
+    sinceDays: number;
+  } & ProjectTrendFilters,
+) {
   // Stage 1: the latest full completed run per config per day. substr on the
   // ISO text timestamp works in both dialects (times are stored as text).
   const latestRuns = db
@@ -358,10 +360,12 @@ export async function getProjectTrend(input: {
  * trackers keep their chart history but drop out of the current state, the
  * same universe the engine/market switches are built from.
  */
-export async function getProjectSummary(input: {
-  projectId: string;
-  device: "desktop" | "mobile";
-} & ProjectTrendFilters) {
+export async function getProjectSummary(
+  input: {
+    projectId: string;
+    device: "desktop" | "mobile";
+  } & ProjectTrendFilters,
+) {
   const configScope = and(
     eq(rankTrackingConfigs.projectId, input.projectId),
     eq(rankTrackingConfigs.isActive, true),

@@ -20,24 +20,23 @@ const state = vi.hoisted(() => {
   };
   const clientMocks = {
     getExternalLinksHistory: vi.fn<() => Promise<HistoryPoint[]>>(),
-    getExternalLinksSamples: vi.fn<
-      (
-        hostId: string,
-        input: { limit: number; offset: number },
-      ) => Promise<{ count: number; links: SampleLink[] }>
-    >(),
+    getExternalLinksSamples:
+      vi.fn<
+        (
+          hostId: string,
+          input: { limit: number; offset: number },
+        ) => Promise<{ count: number; links: SampleLink[] }>
+      >(),
   };
   return {
     database: null as DatabaseSync | null,
-    yandexConnection: null as
-      | {
-          projectId: string;
-          hostId: string;
-          hostUrl: string;
-          connectedByUserId: string;
-          yandexAccountId: string | null;
-        }
-      | null,
+    yandexConnection: null as {
+      projectId: string;
+      hostId: string;
+      hostUrl: string;
+      connectedByUserId: string;
+      yandexAccountId: string | null;
+    } | null,
     gscConnection: null as { siteUrl: string } | null,
     ...clientMocks,
     clientMocks,
@@ -139,7 +138,9 @@ describe("WebmasterBacklinksService.getBacklinks", () => {
   it("collects when nothing is stored, then serves reads without further API calls", async () => {
     connectYandex();
 
-    const first = await WebmasterBacklinksService.getBacklinks({ projectId: "p1" });
+    const first = await WebmasterBacklinksService.getBacklinks({
+      projectId: "p1",
+    });
     expect(first.yandex).toMatchObject({
       connected: true,
       hostUrl: "https://site.example/",
@@ -158,7 +159,9 @@ describe("WebmasterBacklinksService.getBacklinks", () => {
 
     state.getExternalLinksHistory.mockClear();
     state.getExternalLinksSamples.mockClear();
-    const second = await WebmasterBacklinksService.getBacklinks({ projectId: "p1" });
+    const second = await WebmasterBacklinksService.getBacklinks({
+      projectId: "p1",
+    });
     expect(second.yandex.connected).toBe(true);
     expect(second.yandex.storedSamplesCount).toBe(2);
     expect(state.getExternalLinksHistory).not.toHaveBeenCalled();
@@ -168,7 +171,9 @@ describe("WebmasterBacklinksService.getBacklinks", () => {
   it("reports both webmasters' connection state when Yandex is not connected", async () => {
     state.gscConnection = { siteUrl: "sc-domain:site.example" };
 
-    const result = await WebmasterBacklinksService.getBacklinks({ projectId: "p1" });
+    const result = await WebmasterBacklinksService.getBacklinks({
+      projectId: "p1",
+    });
     expect(result.yandex).toMatchObject({
       connected: false,
       unavailableReason: null,
@@ -193,7 +198,9 @@ describe("WebmasterBacklinksService.getBacklinks", () => {
       new YandexWebmasterTokenError("Could not mint a Yandex Webmaster token"),
     );
 
-    const result = await WebmasterBacklinksService.getBacklinks({ projectId: "p1" });
+    const result = await WebmasterBacklinksService.getBacklinks({
+      projectId: "p1",
+    });
     expect(result.yandex).toMatchObject({
       connected: false,
       unavailableReason: "Could not mint a Yandex Webmaster token",
@@ -212,10 +219,17 @@ describe("WebmasterBacklinksService.getBacklinks", () => {
       new YandexWebmasterApiError(500, "Yandex Webmaster API error (500)."),
     );
 
-    const result = await WebmasterBacklinksService.getBacklinks({ projectId: "p1" });
+    const result = await WebmasterBacklinksService.getBacklinks({
+      projectId: "p1",
+    });
     expect(result.yandex.connected).toBe(true);
-    expect(result.yandex.collectError).toBe("Yandex Webmaster API error (500).");
-    expect(result.yandex.latest).toEqual({ date: "2026-02-01", linksTotalCount: 55 });
+    expect(result.yandex.collectError).toBe(
+      "Yandex Webmaster API error (500).",
+    );
+    expect(result.yandex.latest).toEqual({
+      date: "2026-02-01",
+      linksTotalCount: 55,
+    });
     expect(result.yandex.samples).toHaveLength(2);
   });
 
@@ -230,11 +244,19 @@ describe("WebmasterBacklinksService.getBacklinks", () => {
     state.getExternalLinksSamples.mockImplementation(async (_hostId, input) => {
       // Full pages for offsets 0..399, then a short final page.
       if (input.offset < 400)
-        return { count: 502, links: fullPage.map((l) => ({ ...l, sourceUrl: `${l.sourceUrl}${input.offset}` })) };
+        return {
+          count: 502,
+          links: fullPage.map((l) => ({
+            ...l,
+            sourceUrl: `${l.sourceUrl}${input.offset}`,
+          })),
+        };
       return { count: 502, links: fullPage.slice(0, 3) };
     });
 
-    const result = await WebmasterBacklinksService.getBacklinks({ projectId: "p1" });
+    const result = await WebmasterBacklinksService.getBacklinks({
+      projectId: "p1",
+    });
     expect(state.getExternalLinksSamples).toHaveBeenCalledTimes(5);
     expect(result.yandex.storedSamplesCount).toBe(403);
     expect(result.yandex.samplesTruncated).toBe(false);

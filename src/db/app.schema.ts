@@ -545,10 +545,7 @@ export const indexStatusPages = sqliteTable(
     lastSeenAt: text("last_seen_at").notNull(),
   },
   (table) => [
-    uniqueIndex("index_status_pages_url_unique").on(
-      table.projectId,
-      table.url,
-    ),
+    uniqueIndex("index_status_pages_url_unique").on(table.projectId, table.url),
   ],
 );
 
