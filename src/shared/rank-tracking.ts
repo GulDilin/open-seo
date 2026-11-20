@@ -53,6 +53,16 @@ export const AUTO_IMPORT_KEYWORDS_PER_CONFIG = 300;
 /** Maximum length of a single tracked keyword */
 export const MAX_TRACKED_KEYWORD_LENGTH = 200;
 
+/** Search-operator queries (site:, host:, url:, ...) that panels report as
+ *  "keywords" — they are lookup instructions, not search phrases, so they are
+ *  never tracked and never suggested. */
+const SEARCH_OPERATOR_PATTERN =
+  /(?:^|\s)(?:site|host|url|inurl|cache|filetype|mime|link|lang|date):/i;
+
+export function hasSearchOperator(keyword: string): boolean {
+  return SEARCH_OPERATOR_PATTERN.test(keyword);
+}
+
 /** Maximum configs (domain+location combos) per project */
 export const MAX_CONFIGS_PER_PROJECT = 500;
 

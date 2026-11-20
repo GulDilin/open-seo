@@ -5,6 +5,7 @@ import {
   devicesCount,
   estimateRankCheckCredits,
   estimateScheduledRankCheckCredits,
+  hasSearchOperator,
   isScheduledRankTrackingInterval,
   MAX_KEYWORDS_PER_CONFIG,
 } from "@/shared/rank-tracking";
@@ -45,7 +46,10 @@ async function addKeywords(
     if (
       normalized &&
       !seen.has(normalized) &&
-      !existingKeywords.has(normalized)
+      !existingKeywords.has(normalized) &&
+      // Operator lookups (site:example.com) slipped in by paste or by a
+      // pre-filter auto-import are not search phrases — drop them silently.
+      !hasSearchOperator(trimmed)
     ) {
       seen.add(normalized);
       rows.push({

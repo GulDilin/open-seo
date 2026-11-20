@@ -1,5 +1,6 @@
 import { normalizeDomain } from "@/types/schemas/domain";
 import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
+import { hasSearchOperator } from "@/shared/rank-tracking";
 import { GscService } from "@/server/features/gsc/services/GscService";
 import { GSC_MAX_ROW_LIMIT } from "@/server/features/gsc/searchAnalytics";
 import { YandexWebmasterService } from "@/server/features/yandex/services/YandexWebmasterService";
@@ -182,7 +183,15 @@ async function get(input: {
   const suggestions: PanelKeywordSuggestion[] = [];
   for (const row of rows) {
     const key = row.query.trim().toLowerCase();
-    if (!key || tracked.has(key) || seen.has(key)) continue;
+    if (
+      !key ||
+      tracked.has(key) ||
+      seen.has(key) ||
+      // Panels report operator lookups (site:example.com) as queries; they
+      // are not search phrases.
+      hasSearchOperator(row.query)
+    )
+      continue;
     seen.add(key);
     suggestions.push({ ...row, query: row.query.trim() });
     if (suggestions.length >= maxSuggestions) break;

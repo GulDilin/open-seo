@@ -183,6 +183,25 @@ it("keeps the higher-impressions panel when both report a query", async () => {
   ]);
 });
 
+it("drops operator lookups like site: but keeps ordinary phrases", async () => {
+  vi.mocked(GscService.getConnection).mockResolvedValue(gscConnection);
+  vi.mocked(GscService.getPerformance).mockResolvedValue(
+    gscPerformance([
+      { keys: ["site:example.com"], impressions: 9000, clicks: 10 },
+      { keys: ["host:example.com"], impressions: 8000, clicks: 8 },
+      { keys: ["site строительство"], impressions: 700, clicks: 2 },
+      { keys: ["widget pro"], impressions: 800, clicks: 5 },
+    ]),
+  );
+
+  const result = await PanelKeywordSuggestions.get({ projectId: "p1" });
+
+  expect(result.suggestions.map((row) => row.query)).toEqual([
+    "widget pro",
+    "site строительство",
+  ]);
+});
+
 it("caps suggestions at 50", async () => {
   vi.mocked(YandexWebmasterService.getConnection).mockResolvedValue(
     yandexConnection,
