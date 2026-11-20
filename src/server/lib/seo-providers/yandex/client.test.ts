@@ -43,11 +43,13 @@ describe("yandexWebSearch", () => {
   });
 
   it("throws the in-XML error instead of reading it as zero results", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      rawDataResponse(
-        `<response><error code="33">Search limit exceeded</error></response>`,
-      ),
-    );
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        rawDataResponse(
+          `<response><error code="33">Search limit exceeded</error></response>`,
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(yandexWebSearch({ keyword: "sneaky" })).rejects.toMatchObject({
@@ -58,11 +60,13 @@ describe("yandexWebSearch", () => {
   });
 
   it("treats the nothing-found error code as an empty result", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      rawDataResponse(
-        `<response><error code="15">No results for this query</error></response>`,
-      ),
-    );
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        rawDataResponse(
+          `<response><error code="15">No results for this query</error></response>`,
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(yandexWebSearch({ keyword: "sneaky" })).resolves.toEqual([]);

@@ -78,7 +78,9 @@ describe("parseYandexDocs", () => {
 describe("parseYandexError", () => {
   it("extracts the code and message from an in-response error element", () => {
     expect(
-      parseYandexError(`<response><error code="33">Search limit exceeded</error></response>`),
+      parseYandexError(
+        `<response><error code="33">Search limit exceeded</error></response>`,
+      ),
     ).toEqual({ code: "33", message: "Search limit exceeded" });
   });
 
