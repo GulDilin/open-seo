@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- one file per service under test; the config, schedule, auto-check, and domain-summary suites share the hoisted repository mocks */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_CONFIGS_PER_PROJECT } from "@/shared/rank-tracking";
 import { asAppError } from "@/server/lib/errors";
@@ -16,6 +17,10 @@ const mocks = vi.hoisted(() => ({
   isHosted: vi.fn(),
   customerHasPaidPlan: vi.fn(),
   getOptionalEnvValue: vi.fn(),
+  getDomainTrackerEngines: vi.fn(),
+  getDomainEngineTrends: vi.fn(),
+  getDomainEngineSummaries: vi.fn(),
+  getDomainEngineTopPages: vi.fn(),
 }));
 
 vi.mock("cloudflare:workers", () => ({
@@ -374,6 +379,142 @@ describe("RankTrackingService.updateConfig engine availability", () => {
 
 const minutesFromNow = (minutes: number) =>
   new Date(Date.now() + minutes * 60_000).toISOString();
+
+describe("RankTrackingService.getDomainTrackerSummary", () => {
+  const input = {
+    projectId: "project_1",
+    projectDomain: "acme.com",
+    device: "desktop" as const,
+    sinceDays: 90,
+  };
+
+  beforeEach(() => {
+    mocks.getDomainTrackerEngines.mockResolvedValue([
+      { searchEngine: "yandex", devices: "mobile" },
+      { searchEngine: "google", devices: "both" },
+    ]);
+    mocks.getDomainEngineTrends.mockResolvedValue([
+      // SQLite aggregates come back as strings; the service normalizes.
+      {
+        searchEngine: "google",
+        day: "2026-08-01",
+        total: "2",
+        pages: "1",
+        top1: "1",
+        top2to5: "0",
+        top6to10: "1",
+        top11to50: "0",
+        keywordsTotal: "2",
+      },
+    ]);
+    mocks.getDomainEngineSummaries.mockResolvedValue({
+      buckets: [
+        {
+          searchEngine: "google",
+          total: 2,
+          pages: 1,
+          top1: 1,
+          top2to5: 0,
+          top6to10: 1,
+          top11to50: 0,
+        },
+      ],
+      keywordsPerEngine: [
+        { searchEngine: "google", count: 3 },
+        { searchEngine: "yandex", count: 2 },
+      ],
+    });
+    mocks.getDomainEngineTopPages.mockResolvedValue([
+      {
+        searchEngine: "google",
+        url: "https://s/a",
+        keywords: 2,
+        bestPosition: 1,
+      },
+      {
+        searchEngine: "google",
+        url: "https://s/b",
+        keywords: 1,
+        bestPosition: 4,
+      },
+      {
+        searchEngine: "google",
+        url: "https://s/c",
+        keywords: 1,
+        bestPosition: 6,
+      },
+      {
+        searchEngine: "google",
+        url: "https://s/d",
+        keywords: 1,
+        bestPosition: 8,
+      },
+      {
+        searchEngine: "google",
+        url: "https://s/e",
+        keywords: 1,
+        bestPosition: 9,
+      },
+      {
+        searchEngine: "google",
+        url: "https://s/f",
+        keywords: 1,
+        bestPosition: 11,
+      },
+      {
+        searchEngine: "yandex",
+        url: "https://s/y",
+        keywords: 1,
+        bestPosition: 3,
+      },
+    ]);
+  });
+
+  it("returns no engines without a project domain or tracker on it", async () => {
+    await expect(
+      RankTrackingService.getDomainTrackerSummary({
+        ...input,
+        projectDomain: null,
+      }),
+    ).resolves.toEqual({ engines: [] });
+    mocks.getDomainTrackerEngines.mockResolvedValue([]);
+    await expect(
+      RankTrackingService.getDomainTrackerSummary(input),
+    ).resolves.toEqual({ engines: [] });
+    expect(mocks.getDomainEngineTrends).not.toHaveBeenCalled();
+  });
+
+  it("builds canonical-order engine blocks and caps top pages at five", async () => {
+    const summary = await RankTrackingService.getDomainTrackerSummary(input);
+
+    expect(summary.engines.map((engine) => engine.searchEngine)).toEqual([
+      "google",
+      "yandex",
+    ]);
+    const [google, yandex] = summary.engines;
+    // notChecked derives from the keyword totals: 3 tracked, 2 checked.
+    expect(google.summary).toMatchObject({ total: 2, notChecked: 1 });
+    expect(google.trend).toEqual([
+      {
+        day: "2026-08-01",
+        total: 2,
+        pages: 1,
+        top1: 1,
+        top2to5: 0,
+        top6to10: 1,
+        top11to50: 0,
+        notInTop50: 0,
+        notChecked: 0,
+      },
+    ]);
+    expect(google.topPages).toHaveLength(5);
+    // No snapshots on yandex yet: zeroed summary, never-checked keywords only.
+    expect(yandex.summary).toMatchObject({ total: 0, notChecked: 2 });
+    expect(yandex.topPages).toEqual([
+      { url: "https://s/y", keywords: 1, bestPosition: 3 },
+    ]);
+  });
+});
 
 describe("RankTrackingService.triggerAutoCheck", () => {
   const input = {

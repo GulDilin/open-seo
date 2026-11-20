@@ -27,6 +27,7 @@ import { DomainOverviewLoadingState } from "@/client/features/domain/components/
 import { RecentSearches } from "@/client/components/RecentSearches";
 import { QueryError } from "@/client/components/QueryState";
 import { DomainSearchCard } from "@/client/features/domain/components/DomainSearchCard";
+import { DomainTrackerSummarySection } from "@/client/features/domain/components/DomainTrackerSummarySection";
 import { KeywordsTab } from "@/client/features/domain/components/KeywordsTab";
 import { PagesTab } from "@/client/features/domain/components/PagesTab";
 import { ProjectDomainRatingCard } from "@/client/features/domain/components/ProjectDomainRatingCard";
@@ -745,6 +746,13 @@ export function DomainOverviewPage({
             </Card>
           </>
         )}
+
+        {/* The project's own tracker data — hides itself while the page
+            researches a different domain. */}
+        <DomainTrackerSummarySection
+          projectId={projectId}
+          searchedDomain={routeState.domain || null}
+        />
       </div>
     </div>
   );

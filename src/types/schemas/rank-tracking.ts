@@ -4,6 +4,10 @@ import { rankTrackingConfigs } from "@/db/schema";
 import { isSupportedLanguageCode } from "@/shared/keyword-locations";
 import { searchEngineField } from "@/shared/search-engines";
 import { MAX_TRACKED_KEYWORD_LENGTH } from "@/shared/rank-tracking";
+import type {
+  RankProjectSummary,
+  RankProjectTrendPoint,
+} from "@/shared/rank-tracking";
 import { comparePeriodSchema } from "@/types/schemas/rank-tracking-search";
 import { domainField } from "@/types/schemas/domain";
 import { scheduleTimeSchema } from "@/types/schemas/schedule-time";
@@ -200,3 +204,36 @@ export const getPositionMatrixSchema = z.object({
   device: deviceEnum,
   runLimit: z.number().int().positive().max(26).default(12),
 });
+
+/** The domain overview's per-engine tracker summary: one call returns every
+ * engine tracked on the project's own domain. */
+export const getDomainTrackerSummarySchema = z.object({
+  projectId: z.string().uuid(),
+  device: deviceEnum,
+  sinceDays: sinceDaysField,
+});
+
+// ---------------------------------------------------------------------------
+// Domain tracker summary (domain overview page)
+// ---------------------------------------------------------------------------
+
+/** A ranking page of the project's domain: how many tracked queries land on
+ *  it and the best of their current positions. */
+export interface DomainTrackerTopPage {
+  url: string;
+  keywords: number;
+  bestPosition: number;
+}
+
+export interface DomainTrackerEngineSummary {
+  searchEngine: RankTrackingConfig["searchEngine"];
+  summary: RankProjectSummary;
+  trend: RankProjectTrendPoint[];
+  topPages: DomainTrackerTopPage[];
+}
+
+/** Empty `engines` = no active tracker on the project's domain (the section
+ *  stays hidden); engines with no snapshots render their own empty state. */
+export interface DomainTrackerSummary {
+  engines: DomainTrackerEngineSummary[];
+}

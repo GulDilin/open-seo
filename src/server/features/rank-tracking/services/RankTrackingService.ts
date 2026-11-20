@@ -17,6 +17,7 @@ import type {
   RankCheckScheduleTime,
   RankTrackingConfig,
   RankCheckTriggerResult,
+  DomainTrackerSummary,
 } from "@/types/schemas/rank-tracking";
 import {
   beginRankCheckRun,
@@ -26,6 +27,8 @@ import {
   estimateRankCheckCredits,
   MAX_CONFIGS_PER_PROJECT,
   rankCheckCostApprovalError,
+  toCount,
+  toSummaryPoint,
 } from "@/shared/rank-tracking";
 import { resolveNextCheckAt } from "./configSchedule";
 import {
@@ -37,6 +40,7 @@ import {
 import {
   enginesForCountry,
   isEngineAvailableForCountry,
+  SEARCH_ENGINES,
 } from "@/shared/search-engines";
 import { getLatestResults } from "./rankTrackingResults";
 import { toRankTrackingTimestamp } from "@/server/features/rank-tracking/rankTrackingTimestamps";
@@ -484,6 +488,90 @@ async function requireRankCheckAccess(organizationId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Domain overview summary
+// ---------------------------------------------------------------------------
+
+/** Ranking pages shown per engine block of the domain overview. */
+const DOMAIN_TOP_PAGES_LIMIT = 5;
+
+/**
+ * The domain overview's tracker summary: one block per engine tracked on the
+ * project's own domain — current visibility tiles, per-day trend, and the top
+ * ranking pages. Trackers on other domains and archived trackers stay out;
+ * no trackers on the domain means no blocks (the section hides).
+ */
+async function getDomainTrackerSummary(input: {
+  projectId: string;
+  projectDomain: string | null;
+  device: "desktop" | "mobile";
+  sinceDays: number;
+}): Promise<DomainTrackerSummary> {
+  if (!input.projectDomain) return { engines: [] };
+
+  const engineConfigs = await RankTrackingRepository.getDomainTrackerEngines(
+    input.projectId,
+    input.projectDomain,
+  );
+  if (engineConfigs.length === 0) return { engines: [] };
+
+  const scope = {
+    projectId: input.projectId,
+    domain: input.projectDomain,
+    device: input.device,
+  };
+  const trendRows = await RankTrackingRepository.getDomainEngineTrends({
+    ...scope,
+    sinceDays: input.sinceDays,
+  });
+  const { buckets, keywordsPerEngine } =
+    await RankTrackingRepository.getDomainEngineSummaries(scope);
+  const topPageRows =
+    await RankTrackingRepository.getDomainEngineTopPages(scope);
+
+  const keywordsTotalByEngine = new Map(
+    keywordsPerEngine.map((row) => [row.searchEngine, row.count]),
+  );
+  const bucketsByEngine = new Map(
+    buckets.map((row) => [row.searchEngine, row]),
+  );
+
+  // Canonical engine order (google, yandex, baidu, bing), not config order.
+  const tracked = new Set(engineConfigs.map((c) => c.searchEngine));
+  const engines = SEARCH_ENGINES.filter((engine) => tracked.has(engine));
+
+  return {
+    engines: engines.map((searchEngine) => {
+      const bucket = bucketsByEngine.get(searchEngine);
+      const keywordsTotal = keywordsTotalByEngine.get(searchEngine) ?? 0;
+      return {
+        searchEngine,
+        // A tracker whose checks all failed has keywords but no bucket row.
+        summary: toSummaryPoint({
+          total: bucket?.total ?? 0,
+          pages: bucket?.pages ?? 0,
+          top1: bucket?.top1 ?? 0,
+          top2to5: bucket?.top2to5 ?? 0,
+          top6to10: bucket?.top6to10 ?? 0,
+          top11to50: bucket?.top11to50 ?? 0,
+          keywordsTotal,
+        }),
+        trend: trendRows
+          .filter((row) => row.searchEngine === searchEngine)
+          .map((row) => ({ day: row.day, ...toSummaryPoint(row) })),
+        topPages: topPageRows
+          .filter((row) => row.searchEngine === searchEngine)
+          .slice(0, DOMAIN_TOP_PAGES_LIMIT)
+          .map((row) => ({
+            url: row.url ?? "",
+            keywords: toCount(row.keywords),
+            bestPosition: toCount(row.bestPosition),
+          })),
+      };
+    }),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -548,5 +636,6 @@ export const RankTrackingService = {
   refreshKeywordMetrics,
   getConfigs,
   getTracker,
+  getDomainTrackerSummary,
   requireRankCheckAccess,
 };

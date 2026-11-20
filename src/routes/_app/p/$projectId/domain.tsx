@@ -15,6 +15,7 @@ import {
 import { getDomainRouteState } from "@/client/features/domain/domainRouteState";
 import { useProjectMarket } from "@/client/features/projects/useProjectMarket";
 import { Card } from "@/client/components/ui/card";
+import { DomainTrackerSummarySection } from "@/client/features/domain/components/DomainTrackerSummarySection";
 import { ProjectDomainRatingCard } from "@/client/features/domain/components/ProjectDomainRatingCard";
 import { ProjectSqiCard } from "@/client/features/domain/components/ProjectSqiCard";
 
@@ -76,6 +77,9 @@ function DomainOverviewRoute() {
           <div className="flex flex-wrap items-stretch gap-3 px-4 pb-4">
             <ProjectDomainRatingCard projectId={projectId} />
             <ProjectSqiCard projectId={projectId} />
+          </div>
+          <div className="px-4 pb-4">
+            <DomainTrackerSummarySection projectId={projectId} />
           </div>
         </Card>
       </div>
