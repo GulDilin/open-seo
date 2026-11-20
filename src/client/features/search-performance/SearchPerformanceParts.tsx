@@ -110,7 +110,7 @@ export function exportDimensionRows(
   return runExport(dimensionExportTable(dimension, rows, stamp), target);
 }
 
-export type Delta = { text: string; improved: boolean } | null;
+type Delta = { text: string; improved: boolean } | null;
 
 export function percentDelta(
   current: number | null,
