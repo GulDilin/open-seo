@@ -4,12 +4,18 @@ import {
   createDataforseoClient,
   SERP_ANALYSIS_DEPTH,
 } from "@/server/lib/dataforseo";
+import { resolveSerpProvider } from "@/server/lib/seo-providers/routing";
+import { serperSearch } from "@/server/lib/seo-providers/serper/client";
+import { hostOf } from "@/server/lib/seo-providers/domain-match";
 import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
 import { mcpResponse } from "@/server/mcp/formatters";
 import { buildProjectMeta } from "@/server/mcp/context";
 import { serpSchema, serpItemSchema } from "@/shared/mcp-contracts";
 import { withMcpProjectAuth } from "@/server/mcp/project-auth";
-import { resolveMarket } from "@/shared/keyword-locations";
+import {
+  getIsoCountryCode,
+  resolveMarket,
+} from "@/shared/keyword-locations";
 import { assertLocalResearchLocation } from "@/server/features/keywords/services/research/local-volume";
 import { toolErrorMessage } from "@/server/mcp/tool-error-message";
 import {
@@ -105,7 +111,6 @@ export const getSerpResultsTool = {
     },
   },
   handler: withMcpProjectAuth(async (args: Args, context) => {
-    const client = createDataforseoClient(context.billing);
     const depth = args.depth ?? SERP_ANALYSIS_DEPTH;
     const results = await Promise.all(
       args.queries.map(async (q) => {
@@ -145,24 +150,58 @@ export const getSerpResultsTool = {
             };
           }
 
-          const items = await client.serp.live({
-            keyword: q.keyword,
-            ...market,
-            locationName: q.locationName,
-            depth,
-            device: q.device,
+          // Same resolution as rank tracking: Serper serves country-level
+          // google (chain order), the incumbent only what it alone can —
+          // city-level sub-country geo (decisions §5). With no configured
+          // provider the resolver throws naming the missing credentials,
+          // which lands in this query's error row — no silent fall-through
+          // to a metered DataForSEO call.
+          const providerId = await resolveSerpProvider("google", {
+            cityLevel: !!q.locationName,
           });
-          // Trim noise — return only essentials per item.
-          const trimmed = items.slice(0, depth).map((item) => ({
-            type: item.type,
-            rank: item.rank_absolute ?? item.rank_group ?? null,
-            organicRank:
-              item.type === "organic" ? (item.rank_group ?? null) : null,
-            title: item.title ?? null,
-            url: item.url ?? null,
-            domain: item.domain ?? null,
-            description: item.description ?? null,
-          }));
+
+          let trimmed: SerpItem[];
+          if (providerId === "serper") {
+            // Serper has no device parameter and serves the desktop layout;
+            // a mobile request gets the same rows a mobile-device tracker
+            // check records on the serper path, so comparisons stay aligned.
+            const response = await serperSearch({
+              keyword: q.keyword,
+              country: getIsoCountryCode(market.locationCode),
+              language: market.languageCode,
+              depth,
+            });
+            trimmed = response.organic.slice(0, depth).map((item, index) => ({
+              type: "organic",
+              rank: item.position ?? index + 1,
+              organicRank: item.position ?? index + 1,
+              title: item.title,
+              url: item.link,
+              domain: hostOf(item.link),
+              description: item.snippet ?? null,
+            }));
+          } else {
+            const items = await createDataforseoClient(
+              context.billing,
+            ).serp.live({
+              keyword: q.keyword,
+              ...market,
+              locationName: q.locationName,
+              depth,
+              device: q.device,
+            });
+            // Trim noise — return only essentials per item.
+            trimmed = items.slice(0, depth).map((item) => ({
+              type: item.type,
+              rank: item.rank_absolute ?? item.rank_group ?? null,
+              organicRank:
+                item.type === "organic" ? (item.rank_group ?? null) : null,
+              title: item.title ?? null,
+              url: item.url ?? null,
+              domain: item.domain ?? null,
+              description: item.description ?? null,
+            }));
+          }
           // DataForSEO reports "no results" transiently; don't pin that for
           // the whole window. waitUntil, not void: workerd cancels
           // unregistered pending I/O once the response is sent.

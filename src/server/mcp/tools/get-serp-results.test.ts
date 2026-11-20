@@ -6,6 +6,8 @@ import type * as r2CacheModule from "@/server/lib/r2-cache";
 const mocks = vi.hoisted(() => ({
   createDataforseoClient: vi.fn(),
   getProjectForOrganization: vi.fn(),
+  resolveSerpProvider: vi.fn(),
+  serperSearch: vi.fn(),
   cache: new Map<string, unknown>(),
 }));
 
@@ -23,6 +25,12 @@ vi.mock("@/server/lib/r2-cache", async (importOriginal) => ({
 vi.mock("@/server/lib/dataforseo", () => ({
   createDataforseoClient: mocks.createDataforseoClient,
   SERP_ANALYSIS_DEPTH: 20,
+}));
+vi.mock("@/server/lib/seo-providers/routing", () => ({
+  resolveSerpProvider: mocks.resolveSerpProvider,
+}));
+vi.mock("@/server/lib/seo-providers/serper/client", () => ({
+  serperSearch: mocks.serperSearch,
 }));
 vi.mock("@/server/features/projects/services/ProjectService", () => ({
   ProjectService: {
@@ -55,6 +63,9 @@ describe("get_serp_results", () => {
       locationCode: 2840,
       languageCode: "en",
     });
+    // The incumbent path stays the default for the existing tests; the
+    // serper tests override this per test.
+    mocks.resolveSerpProvider.mockResolvedValue("dataforseo");
   });
 
   it("crawls and returns rows to the requested depth", async () => {
@@ -105,5 +116,68 @@ describe("get_serp_results", () => {
     expect(live).toHaveBeenLastCalledWith(
       expect.objectContaining({ device: "mobile" }),
     );
+  });
+
+  it("serves organic rows from serper mapped into the tool schema", async () => {
+    mocks.resolveSerpProvider.mockResolvedValue("serper");
+    mocks.serperSearch.mockResolvedValue({
+      organic: [
+        {
+          position: 1,
+          title: "Best SEO Tools",
+          link: "https://www.example.com/tools",
+          snippet: "A curated list.",
+        },
+      ],
+    });
+
+    const result = await getSerpResultsTool.handler(
+      { projectId: "project_1", queries: [{ keyword: "seo tools" }] },
+      toolContext,
+    );
+
+    expect(mocks.resolveSerpProvider).toHaveBeenCalledWith("google", {
+      cityLevel: false,
+    });
+    expect(mocks.serperSearch).toHaveBeenCalledWith({
+      keyword: "seo tools",
+      country: "us",
+      language: "en",
+      depth: 20,
+    });
+    expect(mocks.createDataforseoClient).not.toHaveBeenCalled();
+    const row = result.structuredContent?.results[0];
+    expect(row?.ok).toBe(true);
+    if (row?.ok) {
+      expect(row.items[0]).toEqual({
+        type: "organic",
+        rank: 1,
+        organicRank: 1,
+        title: "Best SEO Tools",
+        url: "https://www.example.com/tools",
+        domain: "example.com",
+        description: "A curated list.",
+      });
+    }
+  });
+
+  it("reports the resolver's error per query instead of a metered fallback", async () => {
+    mocks.resolveSerpProvider.mockRejectedValue(
+      new Error(
+        'No SERP provider configured for engine "google". Set one of: SERPER_API_KEY, DATAFORSEO_API_KEY.',
+      ),
+    );
+
+    const result = await getSerpResultsTool.handler(
+      { projectId: "project_1", queries: [{ keyword: "seo tools" }] },
+      toolContext,
+    );
+
+    expect(mocks.createDataforseoClient).not.toHaveBeenCalled();
+    const failed = result.structuredContent?.results[0];
+    expect(failed?.ok).toBe(false);
+    if (failed && !failed.ok) {
+      expect(failed.error).toContain("No SERP provider configured");
+    }
   });
 });
