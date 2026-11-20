@@ -23,12 +23,6 @@ import {
   TableRow,
 } from "@/client/components/ui/table";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/client/components/ui/tabs";
-import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
@@ -216,36 +210,9 @@ function YandexPanel({
   );
 }
 
-function GscPanel({
-  data,
-}: {
-  data: { connected: boolean; siteUrl: string | null };
-}) {
-  return (
-    <div className="max-w-2xl space-y-2 text-sm text-muted-foreground">
-      {data.connected ? (
-        <p>
-          Search Console property{" "}
-          <span className="font-medium text-foreground">{data.siteUrl}</span> is
-          connected.
-        </p>
-      ) : (
-        <p>Search Console is not connected to this project.</p>
-      )}
-      <p>
-        Google does not expose backlink data through the Search Console API —
-        the Links report (external links, top linking sites, anchor text) is
-        only available in the Search Console interface and via its manual
-        export. This section therefore shows no link counts for Google; connect
-        Yandex Webmaster for API-backed link tracking.
-      </p>
-    </div>
-  );
-}
-
-/** Webmaster-sourced external links: collected snapshots and samples from the
- *  project's connected webmaster tools, rendered above the DataForSEO-powered
- *  research below. Free first-party data — shown even without DataForSEO. */
+/** Webmaster-sourced external links: collected snapshots and samples from
+ *  Yandex Webmaster, rendered above the DataForSEO-powered research below.
+ *  Free first-party data — shown even without DataForSEO. */
 export function WebmasterBacklinksSection({
   projectId,
 }: {
@@ -284,46 +251,18 @@ export function WebmasterBacklinksSection({
       </Card>
     );
   }
-  if (!data.yandex.connected && !data.gsc.connected) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Links from webmaster tools</CardTitle>
-          <CardDescription>
-            Free first-party link data from Yandex Webmaster. Google Search
-            Console does not provide link data through its API.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <YandexConnectionCard projectId={projectId} />
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Links from webmaster tools</CardTitle>
+        <CardTitle>Links from Yandex Webmaster</CardTitle>
         <CardDescription>
           {data.yandex.connected && data.yandex.hostUrl
             ? `Yandex Webmaster reports for ${data.yandex.hostUrl}. Google Search Console does not provide link data through its API.`
-            : "Google Search Console does not provide link data through its API."}
+            : "Free first-party link data from Yandex Webmaster. Google Search Console does not provide link data through its API."}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="yandex">
-          <TabsList>
-            <TabsTrigger value="yandex">Yandex Webmaster</TabsTrigger>
-            <TabsTrigger value="gsc">Google Search Console</TabsTrigger>
-          </TabsList>
-          <TabsContent value="yandex" className="pt-4">
-            <YandexPanel projectId={projectId} data={data.yandex} />
-          </TabsContent>
-          <TabsContent value="gsc" className="pt-4">
-            <GscPanel data={data.gsc} />
-          </TabsContent>
-        </Tabs>
+        <YandexPanel projectId={projectId} data={data.yandex} />
       </CardContent>
     </Card>
   );
