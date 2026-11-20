@@ -11,6 +11,8 @@ import type { ResearchScope } from "@/shared/researchScope";
 import { mapKeywordItem } from "@/server/features/domain/services/domainKeywordMapper";
 import { getKeywordsPage } from "@/server/features/domain/services/domainKeywordsPage";
 import { getPagesPage } from "@/server/features/domain/services/domainPagesPage";
+import { BacklinkSnapshotRepository } from "@/server/features/domain/repositories/BacklinkSnapshotRepository";
+import { BacklinksService } from "@/server/features/backlinks/services/BacklinksService";
 
 // Lets a caller attribute spend to its own feature (e.g. the SAM agent). Applied
 // to the DataForSEO call, not the cache key, so cached results are shared
@@ -216,9 +218,54 @@ async function getSuggestedKeywords(
   return keywords;
 }
 
+/** A snapshot older than this is considered stale and refreshed on demand. */
+const DOMAIN_RATING_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Ahrefs-style domain rating (DataForSEO's backlinks rank) for the project's
+ * own website. Serves the latest backlink snapshot while it is fresh and for
+ * the current domain; otherwise refreshes through the same cached overview
+ * lookup the Backlinks page uses.
+ */
+async function getProjectDomainRating(
+  input: { projectId: string; domain: string | null },
+  billingCustomer: BillingCustomerContext,
+): Promise<{ domain: string | null; rank: number | null }> {
+  const domain = input.domain?.trim() ?? "";
+  if (!domain) return { domain: null, rank: null };
+
+  const snapshot = await BacklinkSnapshotRepository.getLatestForProject(
+    input.projectId,
+  );
+  const capturedMs = snapshot ? Date.parse(snapshot.capturedAt) : Number.NaN;
+  if (
+    snapshot &&
+    snapshot.domain === domain &&
+    snapshot.rank != null &&
+    Number.isFinite(capturedMs) &&
+    Date.now() - capturedMs < DOMAIN_RATING_SNAPSHOT_MAX_AGE_MS
+  ) {
+    return { domain, rank: snapshot.rank };
+  }
+
+  try {
+    // Whole site, subdomains included — the same target snapshots were
+    // captured for. The overview is R2-cached, shared with the Backlinks page.
+    const { overview } = await BacklinksService.profileOverview(
+      { target: domain, scope: "subdomains" },
+      billingCustomer,
+    );
+    return { domain, rank: overview.summary.rank };
+  } catch {
+    // No DataForSEO key or a failed lookup leaves the rating empty, not broken.
+    return { domain, rank: null };
+  }
+}
+
 export const DomainService = {
   getOverview,
   getSuggestedKeywords,
   getKeywordsPage,
   getPagesPage,
+  getProjectDomainRating,
 } as const;

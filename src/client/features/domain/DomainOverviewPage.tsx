@@ -29,6 +29,7 @@ import { QueryError } from "@/client/components/QueryState";
 import { DomainSearchCard } from "@/client/features/domain/components/DomainSearchCard";
 import { KeywordsTab } from "@/client/features/domain/components/KeywordsTab";
 import { PagesTab } from "@/client/features/domain/components/PagesTab";
+import { ProjectDomainRatingCard } from "@/client/features/domain/components/ProjectDomainRatingCard";
 import { HelpLabel } from "@/client/components/HelpLabel";
 import { MetricsTable } from "@/client/components/MetricsTable";
 import { SearchTabStrip } from "@/client/features/search-tabs/SearchTabStrip";
@@ -633,39 +634,42 @@ export function DomainOverviewPage({
                 </Badge>
               </div>
               <div className="px-4 pb-4">
-                <div className="w-full max-w-xl rounded-lg border border-border p-3">
-                  <MetricsTable
-                    rows={[
-                      {
-                        label: overviewMetricsHint ? (
-                          <HelpLabel
-                            label="Estimated organic traffic"
-                            helpText={overviewMetricsHint}
-                          />
-                        ) : (
-                          "Estimated organic traffic"
-                        ),
-                        value: formatMetric(
-                          state.overview.organicTraffic,
-                          state.overview.hasData,
-                        ),
-                      },
-                      {
-                        label: overviewMetricsHint ? (
-                          <HelpLabel
-                            label="Organic keywords"
-                            helpText={overviewMetricsHint}
-                          />
-                        ) : (
-                          "Organic keywords"
-                        ),
-                        value: formatMetric(
-                          state.overview.organicKeywords,
-                          state.overview.hasData,
-                        ),
-                      },
-                    ]}
-                  />
+                <div className="flex flex-wrap items-stretch gap-3">
+                  <div className="w-full max-w-xl rounded-lg border border-border p-3">
+                    <MetricsTable
+                      rows={[
+                        {
+                          label: overviewMetricsHint ? (
+                            <HelpLabel
+                              label="Estimated organic traffic"
+                              helpText={overviewMetricsHint}
+                            />
+                          ) : (
+                            "Estimated organic traffic"
+                          ),
+                          value: formatMetric(
+                            state.overview.organicTraffic,
+                            state.overview.hasData,
+                          ),
+                        },
+                        {
+                          label: overviewMetricsHint ? (
+                            <HelpLabel
+                              label="Organic keywords"
+                              helpText={overviewMetricsHint}
+                            />
+                          ) : (
+                            "Organic keywords"
+                          ),
+                          value: formatMetric(
+                            state.overview.organicKeywords,
+                            state.overview.hasData,
+                          ),
+                        },
+                      ]}
+                    />
+                  </div>
+                  <ProjectDomainRatingCard projectId={projectId} />
                 </div>
               </div>
 
