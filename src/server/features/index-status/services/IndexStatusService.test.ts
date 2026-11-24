@@ -111,6 +111,8 @@ vi.mock("@/server/features/audit/repositories/AuditRepository", () => ({
       Promise.resolve(state.auditPages === null ? null : { id: "a1" }),
     getPagesForAudit: () =>
       Promise.resolve((state.auditPages ?? []).map((url) => ({ url }))),
+    hasPagesForAudit: () =>
+      Promise.resolve((state.auditPages ?? []).length > 0),
   },
 }));
 
@@ -223,25 +225,62 @@ beforeEach(() => {
 });
 
 describe("IndexStatusService.getIndexStatus", () => {
-  it("collects once, then serves reads without further API calls", async () => {
+  it("serves reads from storage and collects only on force", async () => {
     connectBoth();
 
+    // First load: nothing collected yet, so the payload is stale — but the
+    // read itself never touches the engines (the client refreshes in the
+    // background).
     const first = await read({});
     expect(first.google.connected).toBe(true);
     expect(first.yandex.connected).toBe(true);
-    expect(first.google.lastCollectedAt).not.toBeNull();
-    expect(first.yandex.lastCollectedAt).not.toBeNull();
-    expect(first.totals.pages).toBeGreaterThan(0);
+    expect(first.stale).toBe(true);
+    expect(first.totals.pages).toBe(0);
+    expect(state.gscMocks.querySearchAnalytics).not.toHaveBeenCalled();
+    expect(state.yandexMocks.getInSearchSamples).not.toHaveBeenCalled();
+
+    const forced = await read({ force: true });
+    expect(forced.stale).toBe(false);
+    expect(forced.google.lastCollectedAt).not.toBeNull();
+    expect(forced.yandex.lastCollectedAt).not.toBeNull();
+    expect(forced.totals.pages).toBeGreaterThan(0);
+    expect(state.gscMocks.querySearchAnalytics).toHaveBeenCalledTimes(1);
+    expect(state.yandexMocks.getInSearchSamples).toHaveBeenCalledTimes(1);
 
     state.gscMocks.querySearchAnalytics.mockClear();
     state.gscMocks.inspectUrl.mockClear();
     state.yandexMocks.getInSearchSamples.mockClear();
     state.yandexMocks.getSearchEventSamples.mockClear();
-    await read({});
+    const again = await read({});
+    expect(again.stale).toBe(false);
+    expect(again.totals.pages).toBeGreaterThan(0);
     expect(state.gscMocks.querySearchAnalytics).not.toHaveBeenCalled();
     expect(state.gscMocks.inspectUrl).not.toHaveBeenCalled();
     expect(state.yandexMocks.getInSearchSamples).not.toHaveBeenCalled();
     expect(state.yandexMocks.getSearchEventSamples).not.toHaveBeenCalled();
+  });
+
+  it("does not report stale when nothing is connected and no audit exists", async () => {
+    const result = await read({});
+    expect(result.stale).toBe(false);
+  });
+
+  it("reports stale for an audit with pages until a collect settles it", async () => {
+    state.auditPages = ["https://site.example/audit-only"];
+
+    const first = await read({});
+    expect(first.stale).toBe(true);
+
+    await read({ force: true });
+    expect((await read({})).stale).toBe(false);
+  });
+
+  it("ignores an audit without pages when deciding staleness", async () => {
+    // An audit row exists but has not produced pages yet (still running).
+    state.auditPages = [];
+
+    const result = await read({});
+    expect(result.stale).toBe(false);
   });
 
   it("maps inspections, impressions, and Yandex samples into verdicts", async () => {
@@ -258,7 +297,7 @@ describe("IndexStatusService.getIndexStatus", () => {
       },
     ]);
 
-    const rows = rowIndex(await read({}));
+    const rows = rowIndex(await read({ force: true }));
     expect(
       rows.get("https://site.example/indexed-by-impressions")?.google,
     ).toMatchObject({ status: "likely_indexed", evidence: "gsc_impressions" });
@@ -284,14 +323,14 @@ describe("IndexStatusService.getIndexStatus", () => {
 
   it("keeps a stored inspection over a newer impressions heuristic", async () => {
     connectBoth();
-    await read({});
-    // Age everything out so the next read re-collects.
+    await read({ force: true });
+    // Age the collectors out so the next read re-collects.
     state.database!.exec(
       "UPDATE index_status_runs SET collected_at = '2000-01-01T00:00:00.000Z'",
     );
     state.gscMocks.inspectUrl.mockClear();
 
-    const rows = rowIndex(await read({}));
+    const rows = rowIndex(await read({ force: true }));
     // Still inspected (fresh TTL) and not re-inspected, nor downgraded to the
     // impressions heuristic even though the page still has impressions.
     expect(
@@ -321,14 +360,14 @@ describe("IndexStatusService.getIndexStatus", () => {
       indexStatusResult: { verdict: "PASS", coverageState: "Indexed" },
     });
 
-    const result = await read({});
+    const result = await read({ force: true });
     expect(result.totals.inspected).toBe(50);
     expect(state.gscMocks.inspectUrl).toHaveBeenCalledTimes(50);
   });
 
   it("reports a dead grant as unavailable and a server error as collectError", async () => {
     connectBoth();
-    await read({});
+    await read({ force: true });
     state.database!.exec(
       "UPDATE index_status_runs SET collected_at = '2000-01-01T00:00:00.000Z'",
     );
@@ -339,7 +378,7 @@ describe("IndexStatusService.getIndexStatus", () => {
       new YandexWebmasterApiError(500, "Yandex Webmaster API error (500)."),
     );
 
-    const result = await read({});
+    const result = await read({ force: true });
     expect(result.google.unavailableReason).toBe(
       "Could not mint a Search Console access token",
     );
@@ -359,7 +398,7 @@ describe("IndexStatusService.getIndexStatus", () => {
 
   it("filters to pages missing from at least one index", async () => {
     connectBoth();
-    const all = await read({});
+    const all = await read({ force: true });
     expect(all.totalMatching).toBe(all.totals.pages);
     expect(all.totals.problems).toBeGreaterThan(0);
 
@@ -380,7 +419,7 @@ describe("IndexStatusService.getIndexStatus", () => {
       "javascript:alert(1)",
     ];
 
-    const rows = rowIndex(await read({}));
+    const rows = rowIndex(await read({ force: true }));
     const auditRow = rows.get("https://site.example/audit-only");
     expect(auditRow).toBeDefined();
     expect(auditRow?.sources).toContain("audit_crawl");
