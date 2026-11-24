@@ -10,7 +10,7 @@ import {
 
 export type IndexStatusSource = "gsc_search" | "yandex_samples" | "audit_crawl";
 export type IndexStatusEngine = "google" | "yandex";
-export type IndexStatusCollector = IndexStatusEngine | "audit";
+type IndexStatusCollector = IndexStatusEngine | "audit";
 export type IndexStatusVerdict = "indexed" | "not_indexed" | "likely_indexed";
 export type IndexStatusEvidence =
   | "url_inspection"
