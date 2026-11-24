@@ -179,31 +179,45 @@ export function IndexStatusPage({
         data: { projectId, problemsOnly, page, size },
       }),
   });
+  // A `silent` refresh is the background collect of a stale payload: the user
+  // never asked for it, so it does not toast. The forced result is written
+  // straight into the cache it was requested for — a dead grant never marks
+  // itself collected, so a plain re-read would report stale again and hang the
+  // collect indicator. Only sibling keys fall back to a normal re-read.
   const refresh = useMutation({
-    mutationFn: () =>
+    mutationFn: (_options: { silent?: boolean } | undefined) =>
       getIndexStatus({
         data: { projectId, problemsOnly, page, size, force: true },
       }),
-    onSuccess: () => {
-      toast.success("Index status refreshed");
+    onSuccess: (payload, options) => {
+      if (!options?.silent) toast.success("Index status refreshed");
+      queryClient.setQueryData(
+        ["indexStatus", projectId, problemsOnly, page, size],
+        payload,
+      );
       void queryClient.invalidateQueries({
         queryKey: ["indexStatus", projectId],
+        predicate: (candidate) =>
+          candidate.queryKey[2] !== problemsOnly ||
+          candidate.queryKey[3] !== page ||
+          candidate.queryKey[4] !== size,
       });
     },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Refresh failed");
+    onError: (error, options) => {
+      if (!options?.silent) {
+        toast.error(error instanceof Error ? error.message : "Refresh failed");
+      }
     },
   });
   const data = query.data;
 
   // Reads are served from storage, so a stale payload kicks exactly one
-  // background refresh per mount. After it lands the payload reports
-  // stale: false (or the ref guard stops a dead grant from re-triggering).
+  // background refresh per mount.
   const autoCollectStarted = useRef(false);
   useEffect(() => {
     if (!data?.stale || autoCollectStarted.current) return;
     autoCollectStarted.current = true;
-    refresh.mutate();
+    refresh.mutate({ silent: true });
     // `refresh` changes every render; the ref above keeps this to one fire.
   }, [data?.stale, refresh]);
 
@@ -284,8 +298,11 @@ export function IndexStatusPage({
                 · {data.totals.inspected.toLocaleString()} verified by URL
                 inspection (up to 50 inspected per refresh)
               </p>
+              {/* The indicator follows the running collect, not `stale`: a dead
+                  grant reads as stale forever, so a stale-gated spinner would
+                  never clear. */}
               <div className="flex items-center gap-4">
-                {data.stale ? (
+                {data.stale && refresh.isPending ? (
                   <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Spinner className="size-3" />
                     Collecting fresh data…
@@ -335,7 +352,7 @@ export function IndexStatusPage({
                 ? "No pages with indexation problems — every known page is in both indexes (or has no data yet)."
                 : data.google.unavailableReason && data.yandex.unavailableReason
                   ? "Neither engine could be reached yet. Use Refresh once the connections are restored."
-                  : data.stale
+                  : data.stale && refresh.isPending
                     ? "Collecting pages from your connected engines…"
                     : "No pages collected yet — use Refresh to pull pages from the connected engines."}
             </p>
