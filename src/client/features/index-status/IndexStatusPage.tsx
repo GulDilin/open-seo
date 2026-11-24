@@ -106,28 +106,42 @@ export function IndexStatusPage({
   // never asked for it, so it does not toast. The forced result is written
   // straight into the cache it was requested for — a dead grant never marks
   // itself collected, so a plain re-read would report stale again and hang the
-  // collect indicator. Only sibling keys fall back to a normal re-read.
+  // collect indicator. Only sibling keys fall back to a normal re-read. The
+  // key params ride in the mutation variables, not the render scope: the user
+  // can switch page or filter while a collect is in flight, and the payload
+  // must land in the key it was fetched for.
   const refresh = useMutation({
-    mutationFn: (_options: { silent?: boolean } | undefined) =>
+    mutationFn: (vars: {
+      silent?: boolean;
+      problemsOnly: boolean;
+      page: number;
+      size: number;
+    }) =>
       getIndexStatus({
-        data: { projectId, problemsOnly, page, size, force: true },
+        data: {
+          projectId,
+          problemsOnly: vars.problemsOnly,
+          page: vars.page,
+          size: vars.size,
+          force: true,
+        },
       }),
-    onSuccess: (payload, options) => {
-      if (!options?.silent) toast.success("Index status refreshed");
+    onSuccess: (payload, vars) => {
+      if (!vars.silent) toast.success("Index status refreshed");
       queryClient.setQueryData(
-        ["indexStatus", projectId, problemsOnly, page, size],
+        ["indexStatus", projectId, vars.problemsOnly, vars.page, vars.size],
         payload,
       );
       void queryClient.invalidateQueries({
         queryKey: ["indexStatus", projectId],
         predicate: (candidate) =>
-          candidate.queryKey[2] !== problemsOnly ||
-          candidate.queryKey[3] !== page ||
-          candidate.queryKey[4] !== size,
+          candidate.queryKey[2] !== vars.problemsOnly ||
+          candidate.queryKey[3] !== vars.page ||
+          candidate.queryKey[4] !== vars.size,
       });
     },
-    onError: (error, options) => {
-      if (!options?.silent) {
+    onError: (error, vars) => {
+      if (!vars.silent) {
         toast.error(error instanceof Error ? error.message : "Refresh failed");
       }
     },
@@ -140,9 +154,9 @@ export function IndexStatusPage({
   useEffect(() => {
     if (!data?.stale || autoCollectStarted.current) return;
     autoCollectStarted.current = true;
-    refresh.mutate({ silent: true });
+    refresh.mutate({ silent: true, problemsOnly, page, size });
     // `refresh` changes every render; the ref above keeps this to one fire.
-  }, [data?.stale, refresh]);
+  }, [data?.stale, refresh, problemsOnly, page, size]);
 
   if (query.isPending) {
     return (
@@ -244,7 +258,7 @@ export function IndexStatusPage({
                   variant="outline"
                   size="sm"
                   disabled={refresh.isPending}
-                  onClick={() => refresh.mutate()}
+                  onClick={() => refresh.mutate({ problemsOnly, page, size })}
                 >
                   <RefreshCw
                     data-icon="inline-start"
