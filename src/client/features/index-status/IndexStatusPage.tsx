@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { QueryError } from "@/client/components/QueryState";
@@ -14,6 +15,7 @@ import {
   CardTitle,
 } from "@/client/components/ui/card";
 import { Skeleton } from "@/client/components/ui/skeleton";
+import { Spinner } from "@/client/components/ui/spinner";
 import { Switch } from "@/client/components/ui/switch";
 import {
   Table,
@@ -194,6 +196,17 @@ export function IndexStatusPage({
   });
   const data = query.data;
 
+  // Reads are served from storage, so a stale payload kicks exactly one
+  // background refresh per mount. After it lands the payload reports
+  // stale: false (or the ref guard stops a dead grant from re-triggering).
+  const autoCollectStarted = useRef(false);
+  useEffect(() => {
+    if (!data?.stale || autoCollectStarted.current) return;
+    autoCollectStarted.current = true;
+    refresh.mutate();
+    // `refresh` changes every render; the ref above keeps this to one fire.
+  }, [data?.stale, refresh]);
+
   if (query.isPending) {
     return (
       <Card aria-busy="true">
@@ -272,6 +285,12 @@ export function IndexStatusPage({
                 inspection (up to 50 inspected per refresh)
               </p>
               <div className="flex items-center gap-4">
+                {data.stale ? (
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Spinner className="size-3" />
+                    Collecting fresh data…
+                  </span>
+                ) : null}
                 <label className="flex cursor-pointer items-center gap-2 text-sm">
                   <Switch
                     checked={problemsOnly}
@@ -316,7 +335,9 @@ export function IndexStatusPage({
                 ? "No pages with indexation problems — every known page is in both indexes (or has no data yet)."
                 : data.google.unavailableReason && data.yandex.unavailableReason
                   ? "Neither engine could be reached yet. Use Refresh once the connections are restored."
-                  : "No pages collected yet — use Refresh to pull pages from the connected engines."}
+                  : data.stale
+                    ? "Collecting pages from your connected engines…"
+                    : "No pages collected yet — use Refresh to pull pages from the connected engines."}
             </p>
           </CardContent>
         </Card>
