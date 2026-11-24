@@ -25,7 +25,7 @@ const YANDEX_SAMPLES_PAGE_SIZE = 100;
 const YANDEX_SAMPLES_MAX_PAGES = 10;
 const AUDIT_PAGES_LIMIT = 2000;
 
-/** Per-engine collect outcome surfaced by the page (see ensureCollected). */
+/** Per-engine collect outcome surfaced by the page (see collectEngines). */
 export type EngineState = {
   unavailableReason: string | null;
   collectError: string | null;

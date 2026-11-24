@@ -3,7 +3,6 @@ import { useEffect, useRef } from "react";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { QueryError } from "@/client/components/QueryState";
-import { SafeExternalLink } from "@/client/components/SafeExternalLink";
 import { TablePagination } from "@/client/components/table/TablePagination";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
@@ -17,14 +16,7 @@ import {
 import { Skeleton } from "@/client/components/ui/skeleton";
 import { Spinner } from "@/client/components/ui/spinner";
 import { Switch } from "@/client/components/ui/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/client/components/ui/table";
+import { formatDateTime, IndexStatusRows } from "./IndexStatusRows";
 import { GoogleConnectionCard } from "@/client/features/integrations/GoogleConnectionCard";
 import { YandexConnectionCard } from "@/client/features/integrations/YandexConnectionCard";
 import { getIndexStatus } from "@/serverFunctions/indexStatus";
@@ -38,75 +30,6 @@ type Search = {
   page?: number;
   size?: number;
 };
-
-type IndexStatusData = Awaited<ReturnType<typeof getIndexStatus>>;
-type EngineCheck = NonNullable<IndexStatusData["rows"][number]["google"]>;
-
-const SOURCE_LABELS: Record<string, string> = {
-  gsc_search: "GSC search",
-  yandex_samples: "Yandex samples",
-  audit_crawl: "Site audit",
-};
-
-function formatDateTime(value: string | null | undefined): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
-
-/** One engine cell: verdict chip + reason for absence + when it was verified.
- *  No stored check renders as an explicit unknown, never as "not indexed". */
-function EngineStatusCell({
-  check,
-  noDataExplanation,
-}: {
-  check: EngineCheck | null;
-  noDataExplanation: string;
-}) {
-  if (!check) {
-    return (
-      <div className="space-y-0.5">
-        <p className="text-sm text-muted-foreground">No data</p>
-        <p className="text-xs text-muted-foreground">{noDataExplanation}</p>
-      </div>
-    );
-  }
-  const label =
-    check.status === "indexed"
-      ? "In index"
-      : check.status === "likely_indexed"
-        ? "Likely in index"
-        : "Not indexed";
-  const reason =
-    check.status === "not_indexed"
-      ? (check.reason ?? "Reason unknown")
-      : check.status === "likely_indexed"
-        ? "Received impressions in Search Console"
-        : check.reason;
-  return (
-    <div className="space-y-0.5">
-      <p
-        className={`text-sm font-medium ${
-          check.status === "not_indexed"
-            ? "text-red-600 dark:text-red-400"
-            : check.status === "likely_indexed"
-              ? "text-amber-600 dark:text-amber-400"
-              : "text-green-700 dark:text-green-400"
-        }`}
-      >
-        {label}
-      </p>
-      {reason ? (
-        <p className="text-xs text-muted-foreground" title={reason}>
-          {reason}
-        </p>
-      ) : null}
-      <p className="text-xs text-muted-foreground">
-        Checked {formatDateTime(check.checkedAt)}
-      </p>
-    </div>
-  );
-}
 
 /** Connection strip for one engine: refresh state and quota notes. */
 function EngineSummary({
@@ -179,33 +102,61 @@ export function IndexStatusPage({
         data: { projectId, problemsOnly, page, size },
       }),
   });
+  // A `silent` refresh is the background collect of a stale payload: the user
+  // never asked for it, so it does not toast. The forced result is written
+  // straight into the cache it was requested for — a dead grant never marks
+  // itself collected, so a plain re-read would report stale again and hang the
+  // collect indicator. Only sibling keys fall back to a normal re-read. The
+  // key params ride in the mutation variables, not the render scope: the user
+  // can switch page or filter while a collect is in flight, and the payload
+  // must land in the key it was fetched for.
   const refresh = useMutation({
-    mutationFn: () =>
+    mutationFn: (vars: {
+      silent?: boolean;
+      problemsOnly: boolean;
+      page: number;
+      size: number;
+    }) =>
       getIndexStatus({
-        data: { projectId, problemsOnly, page, size, force: true },
+        data: {
+          projectId,
+          problemsOnly: vars.problemsOnly,
+          page: vars.page,
+          size: vars.size,
+          force: true,
+        },
       }),
-    onSuccess: () => {
-      toast.success("Index status refreshed");
+    onSuccess: (payload, vars) => {
+      if (!vars.silent) toast.success("Index status refreshed");
+      queryClient.setQueryData(
+        ["indexStatus", projectId, vars.problemsOnly, vars.page, vars.size],
+        payload,
+      );
       void queryClient.invalidateQueries({
         queryKey: ["indexStatus", projectId],
+        predicate: (candidate) =>
+          candidate.queryKey[2] !== vars.problemsOnly ||
+          candidate.queryKey[3] !== vars.page ||
+          candidate.queryKey[4] !== vars.size,
       });
     },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Refresh failed");
+    onError: (error, vars) => {
+      if (!vars.silent) {
+        toast.error(error instanceof Error ? error.message : "Refresh failed");
+      }
     },
   });
   const data = query.data;
 
   // Reads are served from storage, so a stale payload kicks exactly one
-  // background refresh per mount. After it lands the payload reports
-  // stale: false (or the ref guard stops a dead grant from re-triggering).
+  // background refresh per mount.
   const autoCollectStarted = useRef(false);
   useEffect(() => {
     if (!data?.stale || autoCollectStarted.current) return;
     autoCollectStarted.current = true;
-    refresh.mutate();
+    refresh.mutate({ silent: true, problemsOnly, page, size });
     // `refresh` changes every render; the ref above keeps this to one fire.
-  }, [data?.stale, refresh]);
+  }, [data?.stale, refresh, problemsOnly, page, size]);
 
   if (query.isPending) {
     return (
@@ -284,8 +235,11 @@ export function IndexStatusPage({
                 · {data.totals.inspected.toLocaleString()} verified by URL
                 inspection (up to 50 inspected per refresh)
               </p>
-              <div className="flex items-center gap-4">
-                {data.stale ? (
+              {/* The indicator follows the running collect, not `stale`: a dead
+                  grant reads as stale forever, so a stale-gated spinner would
+                  never clear. */}
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                {data.stale && refresh.isPending ? (
                   <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Spinner className="size-3" />
                     Collecting fresh data…
@@ -304,7 +258,7 @@ export function IndexStatusPage({
                   variant="outline"
                   size="sm"
                   disabled={refresh.isPending}
-                  onClick={() => refresh.mutate()}
+                  onClick={() => refresh.mutate({ problemsOnly, page, size })}
                 >
                   <RefreshCw
                     data-icon="inline-start"
@@ -335,7 +289,7 @@ export function IndexStatusPage({
                 ? "No pages with indexation problems — every known page is in both indexes (or has no data yet)."
                 : data.google.unavailableReason && data.yandex.unavailableReason
                   ? "Neither engine could be reached yet. Use Refresh once the connections are restored."
-                  : data.stale
+                  : data.stale && refresh.isPending
                     ? "Collecting pages from your connected engines…"
                     : "No pages collected yet — use Refresh to pull pages from the connected engines."}
             </p>
@@ -344,54 +298,7 @@ export function IndexStatusPage({
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Page</TableHead>
-                  <TableHead>Google</TableHead>
-                  <TableHead>Yandex</TableHead>
-                  <TableHead>Discovered via</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.rows.map((row) => (
-                  <TableRow key={row.url}>
-                    <TableCell className="max-w-96">
-                      <SafeExternalLink
-                        url={row.url}
-                        label={row.url}
-                        className="block truncate font-medium hover:underline"
-                      />
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <EngineStatusCell
-                        check={row.google}
-                        noDataExplanation="Not inspected yet — URL Inspection is quota-limited"
-                      />
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <EngineStatusCell
-                        check={row.yandex}
-                        noDataExplanation="Not in the Yandex samples collected"
-                      />
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <div className="flex max-w-48 flex-col items-start gap-1">
-                        {row.sources.map((source) => (
-                          <Badge
-                            key={source}
-                            variant="outline"
-                            className="text-xs"
-                          >
-                            {SOURCE_LABELS[source] ?? source}
-                          </Badge>
-                        ))}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <IndexStatusRows rows={data.rows} />
             <TablePagination
               page={page}
               pageSize={size}
