@@ -1,6 +1,13 @@
-import { GscConnectionRepository } from "@/server/features/gsc/repositories/GscConnectionRepository";
+import { AuditRepository } from "@/server/features/audit/repositories/AuditRepository";
+import {
+  GscConnectionRepository,
+  type GscConnection,
+} from "@/server/features/gsc/repositories/GscConnectionRepository";
 import { isExpectedGrantFailure as isGscGrantFailure } from "@/server/features/gsc/services/GscService";
-import { YandexConnectionRepository } from "@/server/features/yandex/repositories/YandexConnectionRepository";
+import {
+  YandexConnectionRepository,
+  type YandexConnection,
+} from "@/server/features/yandex/repositories/YandexConnectionRepository";
 import { isExpectedGrantFailure as isYandexGrantFailure } from "@/server/features/yandex/services/YandexWebmasterService";
 import {
   collectAuditPages,
@@ -10,12 +17,11 @@ import {
 } from "./indexStatusCollectors";
 import {
   IndexStatusRepository,
-  type IndexStatusCollector,
   type IndexStatusSource,
 } from "../repositories/IndexStatusRepository";
 
-// Collects re-run per source at most twice a day; reads in between are served
-// from storage.
+// How old a stored collect may be before the payload reports `stale` and the
+// client refreshes in the background. Collects themselves run only on `force`.
 const COLLECT_TTL_MS = 12 * 60 * 60 * 1000;
 // ponytail: the read path loads the whole project universe (collects cap it at
 // ~5k pages) and paginates in memory; SQL-side pagination if universes grow.
@@ -61,6 +67,9 @@ type IndexStatusResult = {
   totalMatching: number;
   page: number;
   pageSize: number;
+  /** A connected engine or an audit with pages was never collected or is past
+   *  the TTL, so the client should refresh in the background. */
+  stale: boolean;
 };
 
 function isStale(collectedAt: string | null): boolean {
@@ -70,53 +79,41 @@ function isStale(collectedAt: string | null): boolean {
   );
 }
 
-/** Run one collector unless its data is fresh. Expected grant failures and
- *  unexpected errors are captured per collector, never thrown — one dead
- *  engine must not blank the other's column. Grant failures leave the
- *  collector stale so reads keep retrying cheaply until the reconnect. */
-async function ensureCollected(input: {
+/** Force-collect every applicable source: audit pages, Google and Yandex when
+ *  connected. This is the slow path (90-day search analytics, quota-capped URL
+ *  inspections, paginated Yandex samples), so it runs only from the Refresh
+ *  mutation — never from a read. Expected grant failures and unexpected errors
+ *  are captured per collector, never thrown — one dead engine must not blank
+ *  the other's column. Grant failures leave the collector unmarked so reads
+ *  keep reporting the data as stale until the reconnect. */
+async function collectEngines(input: {
   projectId: string;
-  force: boolean;
+  gscConnection: GscConnection | null;
+  yandexConnection: YandexConnection | null;
 }): Promise<{ google: EngineState; yandex: EngineState }> {
-  const [gscConnection, yandexConnection] = await Promise.all([
-    GscConnectionRepository.getByProjectId(input.projectId),
-    YandexConnectionRepository.getByProjectId(input.projectId),
-  ]);
   const google: EngineState = { unavailableReason: null, collectError: null };
   const yandex: EngineState = { unavailableReason: null, collectError: null };
   const now = new Date().toISOString();
 
-  const stale = async (collector: IndexStatusCollector) =>
-    input.force ||
-    isStale(
-      await IndexStatusRepository.lastCollectedAt(input.projectId, collector),
-    );
-
-  if (await stale("audit")) {
-    try {
-      const added = await collectAuditPages({
-        projectId: input.projectId,
-        now,
-      });
-      if (added)
-        await IndexStatusRepository.markCollected(
-          input.projectId,
-          "audit",
-          now,
-        );
-    } catch (error) {
-      console.error("index_status_audit_collect_failed", {
-        projectId: input.projectId,
-        reason: error instanceof Error ? error.message : String(error),
-      });
-    }
+  try {
+    const settled = await collectAuditPages({
+      projectId: input.projectId,
+      now,
+    });
+    if (settled)
+      await IndexStatusRepository.markCollected(input.projectId, "audit", now);
+  } catch (error) {
+    console.error("index_status_audit_collect_failed", {
+      projectId: input.projectId,
+      reason: error instanceof Error ? error.message : String(error),
+    });
   }
 
-  if (gscConnection && (await stale("google"))) {
+  if (input.gscConnection) {
     try {
       const state = await collectGoogle({
         projectId: input.projectId,
-        connection: gscConnection,
+        connection: input.gscConnection,
         now,
       });
       google.collectError = state.collectError;
@@ -137,13 +134,13 @@ async function ensureCollected(input: {
     }
   }
 
-  if (yandexConnection && (await stale("yandex"))) {
+  if (input.yandexConnection) {
     try {
       await collectYandex({
         projectId: input.projectId,
-        hostId: yandexConnection.hostId,
-        connectedByUserId: yandexConnection.connectedByUserId,
-        yandexAccountId: yandexConnection.yandexAccountId,
+        hostId: input.yandexConnection.hostId,
+        connectedByUserId: input.yandexConnection.connectedByUserId,
+        yandexAccountId: input.yandexConnection.yandexAccountId,
         now,
       });
       await IndexStatusRepository.markCollected(input.projectId, "yandex", now);
@@ -184,9 +181,10 @@ function isProblem(row: IndexStatusRow): boolean {
   );
 }
 
-/** The Index Status page payload. Collects from connected engines when their
- *  data is stale (or `force`), then serves stored pages — a render never burns
- *  the GSC inspection quota. */
+/** The Index Status page payload, served from storage so a read answers in
+ *  milliseconds and never burns the GSC inspection quota. `force` is the slow
+ *  path that re-pulls audit, Google and Yandex data synchronously (the Refresh
+ *  button, and the client's background refresh for a stale payload). */
 async function getIndexStatus(input: {
   projectId: string;
   problemsOnly: boolean;
@@ -194,23 +192,52 @@ async function getIndexStatus(input: {
   pageSize: number;
   force?: boolean;
 }): Promise<IndexStatusResult> {
-  const [gscConnection, yandexConnection, collected] = await Promise.all([
+  const [gscConnection, yandexConnection] = await Promise.all([
     GscConnectionRepository.getByProjectId(input.projectId),
     YandexConnectionRepository.getByProjectId(input.projectId),
-    ensureCollected({
-      projectId: input.projectId,
-      force: input.force ?? false,
-    }),
+  ]);
+  const collected = input.force
+    ? await collectEngines({
+        projectId: input.projectId,
+        gscConnection,
+        yandexConnection,
+      })
+    : {
+        google: { unavailableReason: null, collectError: null },
+        yandex: { unavailableReason: null, collectError: null },
+      };
+
+  const [
+    pages,
+    checks,
+    sources,
+    googleCollectedAt,
+    yandexCollectedAt,
+    audit,
+    auditCollectedAt,
+  ] = await Promise.all([
+    IndexStatusRepository.listPages(input.projectId, READ_UNIVERSE_LIMIT),
+    IndexStatusRepository.listChecks(input.projectId),
+    IndexStatusRepository.listSources(input.projectId),
+    IndexStatusRepository.lastCollectedAt(input.projectId, "google"),
+    IndexStatusRepository.lastCollectedAt(input.projectId, "yandex"),
+    AuditRepository.getLatestAuditForProject(input.projectId),
+    IndexStatusRepository.lastCollectedAt(input.projectId, "audit"),
   ]);
 
-  const [pages, checks, sources, googleCollectedAt, yandexCollectedAt] =
-    await Promise.all([
-      IndexStatusRepository.listPages(input.projectId, READ_UNIVERSE_LIMIT),
-      IndexStatusRepository.listChecks(input.projectId),
-      IndexStatusRepository.listSources(input.projectId),
-      IndexStatusRepository.lastCollectedAt(input.projectId, "google"),
-      IndexStatusRepository.lastCollectedAt(input.projectId, "yandex"),
-    ]);
+  // An audit only counts as a source to refresh when it can contribute pages;
+  // an audit still running (or empty) has nothing to pull.
+  const auditHasPages = audit
+    ? await AuditRepository.hasPagesForAudit(audit.id)
+    : false;
+  // A forced collect just ran, so it never reports stale — otherwise a dead
+  // grant (which never marks itself collected) would re-trigger the client's
+  // background refresh forever.
+  const stale =
+    !input.force &&
+    ((gscConnection !== null && isStale(googleCollectedAt)) ||
+      (yandexConnection !== null && isStale(yandexCollectedAt)) ||
+      (auditHasPages && isStale(auditCollectedAt)));
 
   const sourcesByUrl = new Map<string, IndexStatusSource[]>();
   for (const row of sources) {
@@ -273,6 +300,7 @@ async function getIndexStatus(input: {
     totalMatching: filtered.length,
     page: input.page,
     pageSize: input.pageSize,
+    stale,
   };
 }
 

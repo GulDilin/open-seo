@@ -22,9 +22,11 @@ const indexStatusInputSchema = z.object({
   force: z.boolean().optional(),
 });
 
-/** The Index Status page payload. Collects from connected engines when their
- *  stored data is stale (or on `force`), then serves stored pages — GSC URL
- *  inspections are quota-capped and cached, so a render never re-inspects. */
+/** The Index Status page payload, served from storage so it answers in
+ *  milliseconds. `force` is the slow path: it re-pulls audit, Google and Yandex
+ *  data synchronously for the Refresh button and the client's background
+ *  refresh of a stale payload. GSC URL inspections are quota-capped and
+ *  cached, so a render never re-inspects. */
 export const getIndexStatus = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
   .validator(indexStatusInputSchema)

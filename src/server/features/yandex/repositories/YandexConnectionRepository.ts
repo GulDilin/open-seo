@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { yandexConnections } from "@/db/schema";
 
-type YandexConnection = typeof yandexConnections.$inferSelect;
+export type YandexConnection = typeof yandexConnections.$inferSelect;
 
 async function getByProjectId(
   projectId: string,
