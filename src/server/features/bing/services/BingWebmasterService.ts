@@ -475,7 +475,6 @@ async function getLinks(input: {
 export const BingWebmasterService = {
   getConnection,
   listSites,
-  listSitesForApiKey,
   setSite,
   disconnect,
   getSearchPerformance,
