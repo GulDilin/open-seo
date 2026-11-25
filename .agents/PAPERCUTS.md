@@ -34,6 +34,10 @@ data, or sensitive paths.
 
 - [ ] `2026-11-20T08:47:36Z` — `claude` — The final step of `pnpm ci:check` (`test -z "$(git status --porcelain -- plugins/openseo/skills)"`) uses POSIX `test` and command substitution, which cmd.exe (pnpm's default script shell on Windows) cannot run: every Windows contributor gets exit 1 after all seven real checks pass green. Fix: express the check cross-platform, e.g. `node -e "require('node:child_process').execSync('git status --porcelain -- plugins/openseo/skills').toString() && process.exit(1)"` or a tiny script in `scripts/`.
 
+- [ ] `2026-11-24T19:50:00Z` — `claude` — Type-aware oxlint's tsgolint helper intermittently dies with a Go runtime panic (exit 134, goroutine dump) when `pnpm lint` runs concurrently with other heavy pnpm processes (tsc, vitest) in one compound command. Rerunning `pnpm lint` alone succeeds with the same tree. Workaround: run checks sequentially; fix: tsgolint-side crash guard or serialized execution.
+
+- [ ] `2026-11-24T20:10:00Z` — `claude` — `git worktree remove` on an agent worktree that ran `pnpm install` fails with "Directory not empty" (ignored node_modules), but git has already deregistered the worktree by then, so a rerun says "is not a working tree" and the directory stays orphaned on disk. Workaround: `git worktree prune && rm -rf <path>`; fix: none available git-side — delete ignored files first or accept the two-step cleanup.
+
 ## Deferred
 
 - `2026-08-01T16:28:36Z` — `claude` — `web/`'s locked Wrangler 4.71.0 reportedly failed `kv namespace create` with authentication error 10000 while a newer version worked. The locked version is unchanged, but the auth failure was not reverified on 2026-09-05; revisit during routine website dependency maintenance or if this command blocks current work.
