@@ -47,6 +47,7 @@ import { Route as STokenRawRouteImport } from './routes/s/$token/raw'
 import { Route as AppPProjectIdIndexRouteImport } from './routes/_app/p/$projectId/index'
 import { Route as AppPProjectIdAiVisibilityRouteImport } from './routes/_app/p/$projectId/ai-visibility'
 import { Route as AppPProjectIdBacklinksRouteImport } from './routes/_app/p/$projectId/backlinks'
+import { Route as AppPProjectIdBingRouteImport } from './routes/_app/p/$projectId/bing'
 import { Route as AppPProjectIdBrandLookupRouteImport } from './routes/_app/p/$projectId/brand-lookup'
 import { Route as AppPProjectIdContextRouteImport } from './routes/_app/p/$projectId/context'
 import { Route as AppPProjectIdDomainRouteImport } from './routes/_app/p/$projectId/domain'
@@ -65,6 +66,8 @@ import { Route as ApiYandexOauthCallbackRouteImport } from './routes/api/yandex/
 import { Route as AppPProjectIdAiVisibilityIndexRouteImport } from './routes/_app/p/$projectId/ai-visibility/index'
 import { Route as AppPProjectIdAiVisibilityResearchRouteImport } from './routes/_app/p/$projectId/ai-visibility/research'
 import { Route as AppPProjectIdAuditIndexRouteImport } from './routes/_app/p/$projectId/audit/index'
+import { Route as AppPProjectIdBingIndexRouteImport } from './routes/_app/p/$projectId/bing/index'
+import { Route as AppPProjectIdBingLinksRouteImport } from './routes/_app/p/$projectId/bing/links'
 import { Route as AppPProjectIdRankTrackingIndexRouteImport } from './routes/_app/p/$projectId/rank-tracking/index'
 import { Route as AppPProjectIdRankTrackingConfigIdRouteImport } from './routes/_app/p/$projectId/rank-tracking/$configId'
 import { Route as AppPProjectIdReportsIndexRouteImport } from './routes/_app/p/$projectId/reports/index'
@@ -269,6 +272,11 @@ const AppPProjectIdBacklinksRoute = AppPProjectIdBacklinksRouteImport.update({
   path: '/backlinks',
   getParentRoute: () => AppPProjectIdRouteRoute,
 } as any)
+const AppPProjectIdBingRoute = AppPProjectIdBingRouteImport.update({
+  id: '/bing',
+  path: '/bing',
+  getParentRoute: () => AppPProjectIdRouteRoute,
+} as any)
 const AppPProjectIdBrandLookupRoute =
   AppPProjectIdBrandLookupRouteImport.update({
     id: '/brand-lookup',
@@ -365,6 +373,16 @@ const AppPProjectIdAuditIndexRoute = AppPProjectIdAuditIndexRouteImport.update({
   id: '/audit/',
   path: '/audit/',
   getParentRoute: () => AppPProjectIdRouteRoute,
+} as any)
+const AppPProjectIdBingIndexRoute = AppPProjectIdBingIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppPProjectIdBingRoute,
+} as any)
+const AppPProjectIdBingLinksRoute = AppPProjectIdBingLinksRouteImport.update({
+  id: '/links',
+  path: '/links',
+  getParentRoute: () => AppPProjectIdBingRoute,
 } as any)
 const AppPProjectIdRankTrackingIndexRoute =
   AppPProjectIdRankTrackingIndexRouteImport.update({
@@ -474,6 +492,7 @@ export interface FileRoutesByFullPath {
   '/s/$token/': typeof STokenIndexRoute
   '/p/$projectId/ai-visibility': typeof AppPProjectIdAiVisibilityRouteWithChildren
   '/p/$projectId/backlinks': typeof AppPProjectIdBacklinksRoute
+  '/p/$projectId/bing': typeof AppPProjectIdBingRouteWithChildren
   '/p/$projectId/brand-lookup': typeof AppPProjectIdBrandLookupRoute
   '/p/$projectId/context': typeof AppPProjectIdContextRoute
   '/p/$projectId/domain': typeof AppPProjectIdDomainRoute
@@ -491,6 +510,7 @@ export interface FileRoutesByFullPath {
   '/api/yandex/oauth/callback': typeof ApiYandexOauthCallbackRoute
   '/p/$projectId/': typeof AppPProjectIdIndexRoute
   '/p/$projectId/ai-visibility/research': typeof AppPProjectIdAiVisibilityResearchRoute
+  '/p/$projectId/bing/links': typeof AppPProjectIdBingLinksRoute
   '/p/$projectId/rank-tracking/$configId': typeof AppPProjectIdRankTrackingConfigIdRoute
   '/p/$projectId/reports/$reportId': typeof AppPProjectIdReportsReportIdRoute
   '/p/$projectId/reports/templates': typeof AppPProjectIdReportsTemplatesRoute
@@ -499,6 +519,7 @@ export interface FileRoutesByFullPath {
   '/p/$projectId/yandex/backlinks': typeof AppPProjectIdYandexBacklinksRoute
   '/p/$projectId/ai-visibility/': typeof AppPProjectIdAiVisibilityIndexRoute
   '/p/$projectId/audit/': typeof AppPProjectIdAuditIndexRoute
+  '/p/$projectId/bing/': typeof AppPProjectIdBingIndexRoute
   '/p/$projectId/rank-tracking/': typeof AppPProjectIdRankTrackingIndexRoute
   '/p/$projectId/reports/': typeof AppPProjectIdReportsIndexRoute
   '/p/$projectId/settings/': typeof AppPProjectIdSettingsIndexRoute
@@ -552,6 +573,7 @@ export interface FileRoutesByTo {
   '/api/yandex/oauth/callback': typeof ApiYandexOauthCallbackRoute
   '/p/$projectId': typeof AppPProjectIdIndexRoute
   '/p/$projectId/ai-visibility/research': typeof AppPProjectIdAiVisibilityResearchRoute
+  '/p/$projectId/bing/links': typeof AppPProjectIdBingLinksRoute
   '/p/$projectId/rank-tracking/$configId': typeof AppPProjectIdRankTrackingConfigIdRoute
   '/p/$projectId/reports/$reportId': typeof AppPProjectIdReportsReportIdRoute
   '/p/$projectId/reports/templates': typeof AppPProjectIdReportsTemplatesRoute
@@ -560,6 +582,7 @@ export interface FileRoutesByTo {
   '/p/$projectId/yandex/backlinks': typeof AppPProjectIdYandexBacklinksRoute
   '/p/$projectId/ai-visibility': typeof AppPProjectIdAiVisibilityIndexRoute
   '/p/$projectId/audit': typeof AppPProjectIdAuditIndexRoute
+  '/p/$projectId/bing': typeof AppPProjectIdBingIndexRoute
   '/p/$projectId/rank-tracking': typeof AppPProjectIdRankTrackingIndexRoute
   '/p/$projectId/reports': typeof AppPProjectIdReportsIndexRoute
   '/p/$projectId/settings': typeof AppPProjectIdSettingsIndexRoute
@@ -606,6 +629,7 @@ export interface FileRoutesById {
   '/s/$token/': typeof STokenIndexRoute
   '/_app/p/$projectId/ai-visibility': typeof AppPProjectIdAiVisibilityRouteWithChildren
   '/_app/p/$projectId/backlinks': typeof AppPProjectIdBacklinksRoute
+  '/_app/p/$projectId/bing': typeof AppPProjectIdBingRouteWithChildren
   '/_app/p/$projectId/brand-lookup': typeof AppPProjectIdBrandLookupRoute
   '/_app/p/$projectId/context': typeof AppPProjectIdContextRoute
   '/_app/p/$projectId/domain': typeof AppPProjectIdDomainRoute
@@ -623,6 +647,7 @@ export interface FileRoutesById {
   '/api/yandex/oauth/callback': typeof ApiYandexOauthCallbackRoute
   '/_app/p/$projectId/': typeof AppPProjectIdIndexRoute
   '/_app/p/$projectId/ai-visibility/research': typeof AppPProjectIdAiVisibilityResearchRoute
+  '/_app/p/$projectId/bing/links': typeof AppPProjectIdBingLinksRoute
   '/_app/p/$projectId/rank-tracking/$configId': typeof AppPProjectIdRankTrackingConfigIdRoute
   '/_app/p/$projectId/reports/$reportId': typeof AppPProjectIdReportsReportIdRoute
   '/_app/p/$projectId/reports/templates': typeof AppPProjectIdReportsTemplatesRoute
@@ -631,6 +656,7 @@ export interface FileRoutesById {
   '/_app/p/$projectId/yandex/backlinks': typeof AppPProjectIdYandexBacklinksRoute
   '/_app/p/$projectId/ai-visibility/': typeof AppPProjectIdAiVisibilityIndexRoute
   '/_app/p/$projectId/audit/': typeof AppPProjectIdAuditIndexRoute
+  '/_app/p/$projectId/bing/': typeof AppPProjectIdBingIndexRoute
   '/_app/p/$projectId/rank-tracking/': typeof AppPProjectIdRankTrackingIndexRoute
   '/_app/p/$projectId/reports/': typeof AppPProjectIdReportsIndexRoute
   '/_app/p/$projectId/settings/': typeof AppPProjectIdSettingsIndexRoute
@@ -675,6 +701,7 @@ export interface FileRouteTypes {
     | '/s/$token/'
     | '/p/$projectId/ai-visibility'
     | '/p/$projectId/backlinks'
+    | '/p/$projectId/bing'
     | '/p/$projectId/brand-lookup'
     | '/p/$projectId/context'
     | '/p/$projectId/domain'
@@ -692,6 +719,7 @@ export interface FileRouteTypes {
     | '/api/yandex/oauth/callback'
     | '/p/$projectId/'
     | '/p/$projectId/ai-visibility/research'
+    | '/p/$projectId/bing/links'
     | '/p/$projectId/rank-tracking/$configId'
     | '/p/$projectId/reports/$reportId'
     | '/p/$projectId/reports/templates'
@@ -700,6 +728,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/yandex/backlinks'
     | '/p/$projectId/ai-visibility/'
     | '/p/$projectId/audit/'
+    | '/p/$projectId/bing/'
     | '/p/$projectId/rank-tracking/'
     | '/p/$projectId/reports/'
     | '/p/$projectId/settings/'
@@ -753,6 +782,7 @@ export interface FileRouteTypes {
     | '/api/yandex/oauth/callback'
     | '/p/$projectId'
     | '/p/$projectId/ai-visibility/research'
+    | '/p/$projectId/bing/links'
     | '/p/$projectId/rank-tracking/$configId'
     | '/p/$projectId/reports/$reportId'
     | '/p/$projectId/reports/templates'
@@ -761,6 +791,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/yandex/backlinks'
     | '/p/$projectId/ai-visibility'
     | '/p/$projectId/audit'
+    | '/p/$projectId/bing'
     | '/p/$projectId/rank-tracking'
     | '/p/$projectId/reports'
     | '/p/$projectId/settings'
@@ -806,6 +837,7 @@ export interface FileRouteTypes {
     | '/s/$token/'
     | '/_app/p/$projectId/ai-visibility'
     | '/_app/p/$projectId/backlinks'
+    | '/_app/p/$projectId/bing'
     | '/_app/p/$projectId/brand-lookup'
     | '/_app/p/$projectId/context'
     | '/_app/p/$projectId/domain'
@@ -823,6 +855,7 @@ export interface FileRouteTypes {
     | '/api/yandex/oauth/callback'
     | '/_app/p/$projectId/'
     | '/_app/p/$projectId/ai-visibility/research'
+    | '/_app/p/$projectId/bing/links'
     | '/_app/p/$projectId/rank-tracking/$configId'
     | '/_app/p/$projectId/reports/$reportId'
     | '/_app/p/$projectId/reports/templates'
@@ -831,6 +864,7 @@ export interface FileRouteTypes {
     | '/_app/p/$projectId/yandex/backlinks'
     | '/_app/p/$projectId/ai-visibility/'
     | '/_app/p/$projectId/audit/'
+    | '/_app/p/$projectId/bing/'
     | '/_app/p/$projectId/rank-tracking/'
     | '/_app/p/$projectId/reports/'
     | '/_app/p/$projectId/settings/'
@@ -1130,6 +1164,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPProjectIdBacklinksRouteImport
       parentRoute: typeof AppPProjectIdRouteRoute
     }
+    '/_app/p/$projectId/bing': {
+      id: '/_app/p/$projectId/bing'
+      path: '/bing'
+      fullPath: '/p/$projectId/bing'
+      preLoaderRoute: typeof AppPProjectIdBingRouteImport
+      parentRoute: typeof AppPProjectIdRouteRoute
+    }
     '/_app/p/$projectId/brand-lookup': {
       id: '/_app/p/$projectId/brand-lookup'
       path: '/brand-lookup'
@@ -1256,6 +1297,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPProjectIdAuditIndexRouteImport
       parentRoute: typeof AppPProjectIdRouteRoute
     }
+    '/_app/p/$projectId/bing/': {
+      id: '/_app/p/$projectId/bing/'
+      path: '/'
+      fullPath: '/p/$projectId/bing/'
+      preLoaderRoute: typeof AppPProjectIdBingIndexRouteImport
+      parentRoute: typeof AppPProjectIdBingRoute
+    }
+    '/_app/p/$projectId/bing/links': {
+      id: '/_app/p/$projectId/bing/links'
+      path: '/links'
+      fullPath: '/p/$projectId/bing/links'
+      preLoaderRoute: typeof AppPProjectIdBingLinksRouteImport
+      parentRoute: typeof AppPProjectIdBingRoute
+    }
     '/_app/p/$projectId/rank-tracking/': {
       id: '/_app/p/$projectId/rank-tracking/'
       path: '/'
@@ -1377,6 +1432,19 @@ const AppPProjectIdAiVisibilityRouteWithChildren =
     AppPProjectIdAiVisibilityRouteChildren,
   )
 
+interface AppPProjectIdBingRouteChildren {
+  AppPProjectIdBingLinksRoute: typeof AppPProjectIdBingLinksRoute
+  AppPProjectIdBingIndexRoute: typeof AppPProjectIdBingIndexRoute
+}
+
+const AppPProjectIdBingRouteChildren: AppPProjectIdBingRouteChildren = {
+  AppPProjectIdBingLinksRoute: AppPProjectIdBingLinksRoute,
+  AppPProjectIdBingIndexRoute: AppPProjectIdBingIndexRoute,
+}
+
+const AppPProjectIdBingRouteWithChildren =
+  AppPProjectIdBingRoute._addFileChildren(AppPProjectIdBingRouteChildren)
+
 interface AppPProjectIdRankTrackingRouteChildren {
   AppPProjectIdRankTrackingConfigIdRoute: typeof AppPProjectIdRankTrackingConfigIdRoute
   AppPProjectIdRankTrackingIndexRoute: typeof AppPProjectIdRankTrackingIndexRoute
@@ -1428,6 +1496,7 @@ const AppPProjectIdYandexRouteWithChildren =
 interface AppPProjectIdRouteRouteChildren {
   AppPProjectIdAiVisibilityRoute: typeof AppPProjectIdAiVisibilityRouteWithChildren
   AppPProjectIdBacklinksRoute: typeof AppPProjectIdBacklinksRoute
+  AppPProjectIdBingRoute: typeof AppPProjectIdBingRouteWithChildren
   AppPProjectIdBrandLookupRoute: typeof AppPProjectIdBrandLookupRoute
   AppPProjectIdContextRoute: typeof AppPProjectIdContextRoute
   AppPProjectIdDomainRoute: typeof AppPProjectIdDomainRoute
@@ -1451,6 +1520,7 @@ interface AppPProjectIdRouteRouteChildren {
 const AppPProjectIdRouteRouteChildren: AppPProjectIdRouteRouteChildren = {
   AppPProjectIdAiVisibilityRoute: AppPProjectIdAiVisibilityRouteWithChildren,
   AppPProjectIdBacklinksRoute: AppPProjectIdBacklinksRoute,
+  AppPProjectIdBingRoute: AppPProjectIdBingRouteWithChildren,
   AppPProjectIdBrandLookupRoute: AppPProjectIdBrandLookupRoute,
   AppPProjectIdContextRoute: AppPProjectIdContextRoute,
   AppPProjectIdDomainRoute: AppPProjectIdDomainRoute,

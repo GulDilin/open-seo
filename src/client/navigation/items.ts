@@ -76,6 +76,17 @@ const projectNavItems = [
     icon: Link2,
   },
   {
+    to: "/p/$projectId/bing" as const,
+    label: "Performance",
+    icon: ChartColumn,
+    activeOptions: { exact: true },
+  },
+  {
+    to: "/p/$projectId/bing/links" as const,
+    label: "External Links",
+    icon: Link2,
+  },
+  {
     to: "/p/$projectId/audit" as const,
     label: "Site Audit",
     icon: ClipboardCheck,
@@ -176,6 +187,13 @@ export function getProjectNavGroups(projectId: string) {
       items: [
         byPath("/p/$projectId/yandex"),
         byPath("/p/$projectId/yandex/backlinks"),
+      ],
+    },
+    {
+      label: "Bing Webmaster",
+      items: [
+        byPath("/p/$projectId/bing"),
+        byPath("/p/$projectId/bing/links"),
       ],
     },
     {
