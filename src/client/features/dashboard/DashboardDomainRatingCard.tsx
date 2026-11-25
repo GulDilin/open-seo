@@ -37,6 +37,13 @@ function Stat({
  * the rating needs a working DataForSEO key or Ahrefs, SQI needs a connected
  * Yandex Webmaster site.
  */
+
+// The DataForSEO badge contradicts an Ahrefs-sourced rating, so it only stays
+// while no source produced a rank.
+const needsDataForSeoBadge = (
+  dataforseo: boolean | undefined,
+  rating: { rank: number | null } | undefined,
+) => dataforseo === false && rating?.rank == null;
 export function DashboardDomainRatingCard({
   projectId,
 }: {
@@ -48,7 +55,6 @@ export function DashboardDomainRatingCard({
   const rating = ratingQuery.data;
   const sqi = sqiQuery.data;
 
-  const noDataForSeo = setup.data != null && !setup.data.dataforseo;
   // The service names the provider it used, or the reason it could not rate
   // the site — no guessing here.
   const ratingReason = !rating
@@ -114,7 +120,8 @@ export function DashboardDomainRatingCard({
           />
         )}
       </div>
-      {noDataForSeo ? (
+      {needsDataForSeoBadge(setup.data?.dataforseo, rating) &&
+      !ratingQuery.isPending ? (
         <div className="mt-4">
           <DataForSeoRequiredBadge />
         </div>

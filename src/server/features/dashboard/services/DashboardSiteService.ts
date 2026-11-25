@@ -8,6 +8,7 @@ import {
 } from "@/server/lib/dataforseo";
 import { mapBacklinksRows } from "@/server/features/backlinks/services/backlinksRowMappers";
 import { WebmasterBacklinksRepository } from "@/server/features/backlinks/repositories/WebmasterBacklinksRepository";
+import { WebmasterBacklinksService } from "@/server/features/backlinks/services/WebmasterBacklinksService";
 import { safeHostname } from "@/shared/safe-url";
 import {
   referringDomainItemSchema,
@@ -36,6 +37,27 @@ const queriesSchema = z.object({
   baselineStartDate: z.string(),
 });
 
+// Same field names as the DataForSEO rows so one table can render both;
+// Yandex reports no anchor text, link type, rank or spam score.
+function toYandexRow(sample: {
+  sourceUrl: string;
+  destinationUrl: string;
+  discoveryDate: string | null;
+}) {
+  return {
+    source: "yandex_webmaster" as const,
+    domainFrom: safeHostname(sample.sourceUrl),
+    urlFrom: sample.sourceUrl,
+    urlTo: sample.destinationUrl,
+    anchor: null,
+    isDofollow: null,
+    domainFromRank: null,
+    spamScore: null,
+    firstSeen: sample.discoveryDate,
+    lastSeen: sample.discoveryDate,
+  };
+}
+
 // The dashboard only lists links Yandex already reported, in the same 7-day
 // window the DataForSEO widget uses. No collect here — collecting makes
 // network calls and would slow every dashboard visit; it happens on the
@@ -48,20 +70,24 @@ async function listYandexNewLinks(projectId: string) {
     from,
     25,
   );
-  // Same field names as the DataForSEO rows so one table can render both;
-  // Yandex reports no anchor text, link type, rank or spam score.
-  return samples.map((sample) => ({
-    source: "yandex_webmaster" as const,
-    domainFrom: safeHostname(sample.sourceUrl),
-    urlFrom: sample.sourceUrl,
-    urlTo: sample.destinationUrl,
-    anchor: null,
-    isDofollow: null,
-    domainFromRank: null,
-    spamScore: null,
-    firstSeen: sample.discoveryDate,
-    lastSeen: sample.discoveryDate,
-  }));
+  return samples.map(toYandexRow);
+}
+
+// The no-DataForSEO widgets have no DataForSEO rows at all, so Yandex samples
+// become the whole table over a wider window — and they collect (TTL-gated,
+// the Backlinks page's rules) so a user who never opens that page still sees
+// links. Grant failures come back as a reason, never an error.
+async function getWebmasterLinks(projectId: string) {
+  const from = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+  const result = await WebmasterBacklinksService.getRecentSamples({
+    projectId,
+    fromDate: from,
+    limit: 25,
+  });
+  // Only the mapped rows cross the boundary: raw samples and mapped rows would
+  // double the payload for the same data.
+  const { samples, ...state } = result;
+  return { ...state, yandex: samples.map(toYandexRow) };
 }
 
 async function getBacklinks(
@@ -375,4 +401,5 @@ export const DashboardSiteService = {
   getBacklinks,
   getEmergingQueries,
   getLinkActivity,
+  getWebmasterLinks,
 };

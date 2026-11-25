@@ -262,3 +262,118 @@ describe("WebmasterBacklinksService.getBacklinks", () => {
     expect(result.yandex.samplesTruncated).toBe(false);
   });
 });
+
+describe("WebmasterBacklinksService.getRecentSamples", () => {
+  it("collects when stale and returns only samples discovered on/after fromDate", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-20T12:00:00.000Z"));
+    try {
+      connectYandex();
+      const fresh = {
+        sourceUrl: "https://a.example/page/",
+        destinationUrl: "https://site.example/x",
+        discoveryDate: "2026-11-18",
+        sourceLastAccessDate: null,
+      };
+      state.getExternalLinksSamples.mockResolvedValue({
+        count: 2,
+        links: [
+          fresh,
+          {
+            ...fresh,
+            sourceUrl: "https://old.example/",
+            discoveryDate: "2026-10-01",
+          },
+        ],
+      });
+
+      const result = await WebmasterBacklinksService.getRecentSamples({
+        projectId: "p1",
+        fromDate: "2026-10-21",
+        limit: 25,
+      });
+      expect(result).toMatchObject({
+        connected: true,
+        unavailableReason: null,
+        collectError: null,
+        samples: [
+          {
+            sourceUrl: fresh.sourceUrl,
+            destinationUrl: fresh.destinationUrl,
+            discoveryDate: fresh.discoveryDate,
+          },
+        ],
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("degrades to disconnected with the grant reason instead of throwing", async () => {
+    connectYandex();
+    await WebmasterBacklinksService.getBacklinks({ projectId: "p1" });
+    state.database!.exec(
+      "UPDATE webmaster_backlink_snapshots SET captured_at = '2000-01-01T00:00:00.000Z'",
+    );
+    state.getExternalLinksHistory.mockRejectedValue(
+      new YandexWebmasterTokenError("Could not mint a Yandex Webmaster token"),
+    );
+
+    const result = await WebmasterBacklinksService.getRecentSamples({
+      projectId: "p1",
+      fromDate: "2026-10-21",
+      limit: 25,
+    });
+    expect(result).toEqual({
+      connected: false,
+      unavailableReason: "Could not mint a Yandex Webmaster token",
+      collectError: null,
+      samples: [],
+    });
+  });
+
+  it("keeps stored samples with a collectError when an unexpected refresh failure hits", async () => {
+    connectYandex();
+    await WebmasterBacklinksService.getBacklinks({ projectId: "p1" });
+    state.database!.exec(
+      "UPDATE webmaster_backlink_snapshots SET captured_at = '2000-01-01T00:00:00.000Z'",
+    );
+    state.getExternalLinksHistory.mockRejectedValue(
+      new YandexWebmasterApiError(500, "Yandex Webmaster API error (500)."),
+    );
+
+    const result = await WebmasterBacklinksService.getRecentSamples({
+      projectId: "p1",
+      fromDate: "2026-01-01",
+      limit: 25,
+    });
+    // The undated sample is out: its age is unknown, so it never counts.
+    expect(result).toMatchObject({
+      connected: true,
+      collectError: "Yandex Webmaster API error (500).",
+      samples: [
+        {
+          sourceUrl: SAMPLE_LINKS[0].sourceUrl,
+          destinationUrl: SAMPLE_LINKS[0].destinationUrl,
+          discoveryDate: SAMPLE_LINKS[0].discoveryDate,
+        },
+      ],
+    });
+  });
+
+  it("reports disconnected without collecting when Yandex is not connected", async () => {
+    const result = await WebmasterBacklinksService.getRecentSamples({
+      projectId: "p1",
+      fromDate: "2026-10-21",
+      limit: 25,
+    });
+    expect(result).toEqual({
+      connected: false,
+      unavailableReason: null,
+      collectError: null,
+      samples: [],
+    });
+    expect(state.getExternalLinksHistory).not.toHaveBeenCalled();
+    expect(state.getExternalLinksSamples).not.toHaveBeenCalled();
+  });
+});

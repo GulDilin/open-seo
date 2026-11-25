@@ -12,11 +12,16 @@ import { Link2 } from "lucide-react";
 import { CardShell } from "@/client/components/CardShell";
 import { QueryState } from "@/client/components/QueryState";
 import { getDashboardLinkActivity } from "@/serverFunctions/dashboard";
+import { useSeoProviderSetup } from "@/client/components/ProviderRequiredBadge";
 import {
-  DataForSeoRequiredBadge,
-  useSeoProviderSetup,
-} from "@/client/components/ProviderRequiredBadge";
-import { DashboardInfo, ExternalPage, Freshness } from "./siteTabParts";
+  DashboardInfo,
+  ExternalPage,
+  Freshness,
+  useWebmasterLinksQuery,
+  WebmasterLinksUnavailable,
+  YandexLinksTable,
+  YandexSourceNote,
+} from "./siteTabParts";
 import { moreDetailsClass } from "./cardParts";
 
 // DataForSEO rows keep their own shape (referring domains, or backlinks with
@@ -25,6 +30,42 @@ import { moreDetailsClass } from "./cardParts";
 function SourceCaption({ label }: { label: string }) {
   return (
     <p className="mb-1 text-xs font-medium text-muted-foreground">{label}</p>
+  );
+}
+
+function NewLinksEmptyState({ projectId }: { projectId: string }) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 py-8 text-center">
+      <Link2 className="size-7 text-muted-foreground" />
+      <h3 className="font-medium">No new links this week</h3>
+      <p className="text-sm text-muted-foreground">
+        Explore the sites already linking to you.
+      </p>
+      <Link
+        to="/p/$projectId"
+        params={{ projectId }}
+        search={{ tab: "backlinks" }}
+        className="text-sm text-primary hover:underline"
+      >
+        View backlinks →
+      </Link>
+    </div>
+  );
+}
+
+function NewLinksInfo() {
+  return (
+    <DashboardInfo label="About new links">
+      <p>
+        Links to your website found in the past week. We show new linking sites
+        first.
+      </p>
+      <p className="mt-2">A link may be older than the date it was found.</p>
+      <p className="mt-2">
+        Links come from DataForSEO and, when Yandex Webmaster is connected, from
+        Yandex too — each section is labelled.
+      </p>
+    </DashboardInfo>
   );
 }
 
@@ -42,17 +83,14 @@ export function DashboardLinkActivity({
     staleTime: 86400_000,
     retry: false,
     // Link activity still runs on DataForSEO; without its key the request
-    // would throw server-side on every dashboard visit. The badge below
-    // explains instead of showing a load error.
+    // would throw server-side on every dashboard visit. Yandex's samples take
+    // over instead (see WebmasterLinkActivity).
     enabled: setup.data?.dataforseo === true,
   });
-  if (setup.data && !setup.data.dataforseo) {
-    return (
-      <CardShell title="New backlinks">
-        <DataForSeoRequiredBadge />
-      </CardShell>
-    );
-  }
+  // No DataForSEO key: connected Yandex Webmaster samples become the card
+  // instead of a badge. The badge only returns when Yandex is unavailable too.
+  if (setup.data && !setup.data.dataforseo)
+    return <WebmasterLinkActivity projectId={projectId} />;
   return (
     <QueryState query={query} errorFallback="Could not load new links">
       {(data) => {
@@ -61,21 +99,7 @@ export function DashboardLinkActivity({
         return (
           <CardShell
             title="New backlinks"
-            titleInfo={
-              <DashboardInfo label="About new links">
-                <p>
-                  Links to your website found in the past week. We show new
-                  linking sites first.
-                </p>
-                <p className="mt-2">
-                  A link may be older than the date it was found.
-                </p>
-                <p className="mt-2">
-                  Links come from DataForSEO and, when Yandex Webmaster is
-                  connected, from Yandex too — each section is labelled.
-                </p>
-              </DashboardInfo>
-            }
+            titleInfo={<NewLinksInfo />}
             action={
               <Link
                 to="/p/$projectId"
@@ -161,56 +185,57 @@ export function DashboardLinkActivity({
                     {hasDfsRows ? (
                       <SourceCaption label="Yandex Webmaster" />
                     ) : null}
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Referring page</TableHead>
-                          <TableHead>Target page</TableHead>
-                          <TableHead className="text-right">Found</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {data.yandex.slice(0, 5).map((row, index) => (
-                          <TableRow key={`${row.urlFrom}:${index}`}>
-                            <TableCell>
-                              <ExternalPage
-                                url={row.urlFrom}
-                                label={row.domainFrom}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <ExternalPage url={row.urlTo} />
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {row.firstSeen?.slice(0, 10) ?? "—"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                    <YandexLinksTable rows={data.yandex.slice(0, 5)} />
                   </section>
                 ) : null}
               </div>
             ) : (
-              <div className="flex flex-1 flex-col items-center justify-center gap-3 py-8 text-center">
-                <Link2 className="size-7 text-muted-foreground" />
-                <h3 className="font-medium">No new links this week</h3>
-                <p className="text-sm text-muted-foreground">
-                  Explore the sites already linking to you.
-                </p>
-                <Link
-                  to="/p/$projectId"
-                  params={{ projectId }}
-                  search={{ tab: "backlinks" }}
-                  className="text-sm text-primary hover:underline"
-                >
-                  View backlinks →
-                </Link>
-              </div>
+              <NewLinksEmptyState projectId={projectId} />
             )}
           </CardShell>
         );
       }}
     </QueryState>
+  );
+}
+
+// The no-DataForSEO card: what connected Yandex Webmaster found in the past
+// 30 days, newest first. Without a Yandex connection (or with a dead grant)
+// the DataForSEO badge comes back — nothing else can fill in.
+function WebmasterLinkActivity({ projectId }: { projectId: string }) {
+  const query = useWebmasterLinksQuery(projectId);
+  return (
+    <CardShell
+      title="New backlinks"
+      action={
+        <Link
+          to="/p/$projectId"
+          params={{ projectId }}
+          search={{ tab: "backlinks" }}
+          className={moreDetailsClass}
+        >
+          View all →
+        </Link>
+      }
+    >
+      <QueryState query={query} errorFallback="Could not load new links">
+        {(data) =>
+          data.connected ? (
+            <>
+              <YandexSourceNote collectError={data.collectError} />
+              {data.yandex.length ? (
+                <YandexLinksTable rows={data.yandex.slice(0, 5)} />
+              ) : (
+                <NewLinksEmptyState projectId={projectId} />
+              )}
+            </>
+          ) : (
+            <WebmasterLinksUnavailable
+              unavailableReason={data.unavailableReason}
+            />
+          )
+        }
+      </QueryState>
+    </CardShell>
   );
 }
