@@ -78,7 +78,11 @@ export const searchPerformanceTableExportInputSchema = z.object({
   dimension: z.enum(SEARCH_PERFORMANCE_TABLE_DIMENSIONS),
 });
 
-export const SEARCH_PERFORMANCE_TABS = ["striking", "queries", "pages"] as const;
+export const SEARCH_PERFORMANCE_TABS = [
+  "striking",
+  "queries",
+  "pages",
+] as const;
 export type SearchPerformanceTab = (typeof SEARCH_PERFORMANCE_TABS)[number];
 
 const textMatchParam = z

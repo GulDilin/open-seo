@@ -33,8 +33,7 @@ function BacklinksRoute() {
   // The DataForSEO-powered research below needs its key; without it every
   // mounted query would fail server-side. Render the badge instead of the page.
   const setup = useSeoProviderSetup();
-  if (setup.data && !setup.data.dataforseo)
-    return <DataForSeoRequiredBadge />;
+  if (setup.data && !setup.data.dataforseo) return <DataForSeoRequiredBadge />;
 
   return (
     <div className="space-y-3">
