@@ -153,7 +153,7 @@ const WEBMASTER_COLUMNS: ColumnDef<WebmasterLinkRow>[] = [
   {
     accessorKey: "firstSeen",
     header: ({ column }) => <SortableHeader column={column} label="Found" />,
-    cell: ({ getValue }) => (getValue() as string | null)?.slice(0, 10) ?? "—",
+    cell: ({ row }) => row.original.firstSeen?.slice(0, 10) ?? "—",
   },
 ];
 
