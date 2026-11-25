@@ -69,9 +69,9 @@ describe("bingWebmasterClient", () => {
         ],
       }),
     );
-    const stats = await createBingWebmasterClient({ apiKey: "k" }).getQueryStats(
-      "http://example.com/",
-    );
+    const stats = await createBingWebmasterClient({
+      apiKey: "k",
+    }).getQueryStats("http://example.com/");
 
     expect(stats).toEqual({
       rows: [
@@ -107,9 +107,9 @@ describe("bingWebmasterClient", () => {
         ],
       }),
     );
-    const stats = await createBingWebmasterClient({ apiKey: "k" }).getQueryStats(
-      "http://example.com/",
-    );
+    const stats = await createBingWebmasterClient({
+      apiKey: "k",
+    }).getQueryStats("http://example.com/");
     expect(stats.rows[0].date).toBe("2011-09-16");
   });
 
@@ -152,7 +152,11 @@ describe("bingWebmasterClient", () => {
       totalPages: 3,
     });
     expect(
-      await client.getUrlLinks("http://example.com/", "http://example.com/x", 0),
+      await client.getUrlLinks(
+        "http://example.com/",
+        "http://example.com/x",
+        0,
+      ),
     ).toEqual({
       details: [
         { sourceUrl: "http://example.com/page1.html", anchorText: "link" },
@@ -212,9 +216,9 @@ describe("bingWebmasterClient", () => {
 
   it("reports no buckets when Bing returns an empty d", async () => {
     mocks.fetch.mockResolvedValueOnce(jsonResponse({ d: [] }));
-    const stats = await createBingWebmasterClient({ apiKey: "k" }).getQueryStats(
-      "http://example.com/",
-    );
+    const stats = await createBingWebmasterClient({
+      apiKey: "k",
+    }).getQueryStats("http://example.com/");
     expect(stats).toEqual({
       rows: [],
       reportedDateFrom: null,

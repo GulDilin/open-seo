@@ -52,15 +52,20 @@ async function listSites(input: {
   return (await openClient(connection)).getUserSites();
 }
 
-/** Map one Bing site to a project, storing the key it was listed with. */
+/** Map one Bing site to a project, storing the key it was listed with — the
+ *  one the user typed, or the project's stored key when none was given
+ *  (change-site). */
 async function setSite(input: {
   projectId: string;
   organizationId: string;
-  apiKey: string;
+  apiKey?: string;
   siteUrl: string;
   userId: string;
 }) {
-  const sites = await listSitesForApiKey(input.apiKey);
+  const sites = await listSites({
+    projectId: input.projectId,
+    apiKey: input.apiKey,
+  });
   const match = sites.find((site) => site.siteUrl === input.siteUrl);
   if (!match) {
     throw new AppError(
@@ -74,12 +79,20 @@ async function setSite(input: {
       "That site isn't verified in Bing Webmaster. Confirm ownership in Bing first.",
     );
   }
-  const { encrypt } = await getSecretCrypto();
+  // A key the user just typed is stored encrypted; otherwise the change-site
+  // flow keeps the key already stored for this project.
+  const stored = await BingConnectionRepository.getByProjectId(input.projectId);
+  const apiKey = input.apiKey
+    ? await (await getSecretCrypto()).encrypt(input.apiKey)
+    : stored?.apiKey;
+  if (!apiKey) {
+    throw new BingWebmasterNotConnectedError(input.projectId);
+  }
   return BingConnectionRepository.upsert({
     projectId: input.projectId,
     organizationId: input.organizationId,
     siteUrl: match.siteUrl,
-    apiKey: await encrypt(input.apiKey),
+    apiKey,
     connectedByUserId: input.userId,
   });
 }
@@ -104,9 +117,7 @@ export function isExpectedAuthFailure(error: unknown): boolean {
   );
 }
 
-async function openClient(connection: {
-  apiKey: string;
-}): Promise<ReturnType<typeof createBingWebmasterClient>> {
+async function openClient(connection: { apiKey: string }) {
   try {
     const apiKey = await (await getSecretCrypto()).decrypt(connection.apiKey);
     return createBingWebmasterClient({ apiKey });
@@ -222,6 +233,19 @@ const SAMPLES_PAGE_LIMIT = 100;
 // Re-collect at most twice a day; reads in between are served from storage.
 const COLLECT_TTL_MS = 12 * 60 * 60 * 1000;
 
+// The half of the payload that is read live from Bing rather than persisted.
+type LinkCountsPart = Pick<
+  BingBacklinksResult,
+  "linkCounts" | "loadedLinksTotal" | "totalPages" | "linkCountsTruncated"
+>;
+
+const EMPTY_LINK_COUNTS: LinkCountsPart = {
+  linkCounts: [],
+  loadedLinksTotal: 0,
+  totalPages: null,
+  linkCountsTruncated: false,
+};
+
 type BingBacklinksResult = {
   connected: boolean;
   siteUrl: string | null;
@@ -273,10 +297,7 @@ function emptyLinksPart(
 async function collectLinkCounts(
   client: ReturnType<typeof createBingWebmasterClient>,
   siteUrl: string,
-): Promise<Pick<
-  BingBacklinksResult,
-  "linkCounts" | "loadedLinksTotal" | "totalPages" | "linkCountsTruncated"
->> {
+): Promise<LinkCountsPart> {
   let linkCounts: BingLinkCounts["links"] = [];
   let totalPages: number | null = null;
   for (let page = 0; page < LINK_COUNTS_MAX_PAGES; page += 1) {
@@ -289,7 +310,8 @@ async function collectLinkCounts(
     linkCounts,
     loadedLinksTotal: linkCounts.reduce((sum, link) => sum + link.count, 0),
     totalPages,
-    linkCountsTruncated: totalPages !== null && totalPages > LINK_COUNTS_MAX_PAGES,
+    linkCountsTruncated:
+      totalPages !== null && totalPages > LINK_COUNTS_MAX_PAGES,
   };
 }
 
@@ -305,13 +327,9 @@ async function collectStoredSamples(
     linkCounts: BingLinkCounts["links"];
     loadedLinksTotal: number;
   },
-): Promise<Array<{ sourceUrl: string; destinationUrl: string; anchorText: string | null }>> {
+): Promise<BingBacklinksResult["samples"]> {
   const capturedAt = new Date().toISOString();
-  const samples: Array<{
-    sourceUrl: string;
-    destinationUrl: string;
-    anchorText: string | null;
-  }> = [];
+  const samples: BingBacklinksResult["samples"] = [];
   const seen = new Set<string>();
   for (const target of input.linkCounts.slice(0, SAMPLE_TARGET_URLS)) {
     const details = await client.getUrlLinks(input.siteUrl, target.url, 0);
@@ -383,20 +401,8 @@ async function getLinks(input: {
     }
   };
 
-  let counts: Pick<
-    BingBacklinksResult,
-    "linkCounts" | "loadedLinksTotal" | "totalPages" | "linkCountsTruncated"
-  > = {
-    linkCounts: [],
-    loadedLinksTotal: 0,
-    totalPages: null,
-    linkCountsTruncated: false,
-  };
-  let freshSamples: Array<{
-    sourceUrl: string;
-    destinationUrl: string;
-    anchorText: string | null;
-  }> | null = null;
+  let counts = EMPTY_LINK_COUNTS;
+  let freshSamples: BingBacklinksResult["samples"] | null = null;
   try {
     const client = await openClient(connection);
     counts = await collectLinkCounts(client, connection.siteUrl);

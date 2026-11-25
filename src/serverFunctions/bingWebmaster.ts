@@ -15,9 +15,10 @@ import { requireProjectContext } from "@/serverFunctions/middleware";
 
 const projectScopedSchema = z.object({ projectId: z.string().min(1) });
 // The API key travels in the request that stores it and is never returned to
-// the client afterwards.
+// the client afterwards. It is omitted by the change-site flow, which reuses
+// the stored key.
 const setSiteSchema = projectScopedSchema.extend({
-  apiKey: z.string().min(1),
+  apiKey: z.string().min(1).optional(),
   siteUrl: z.string().min(1),
 });
 const performanceSchema = projectScopedSchema.extend({
@@ -53,7 +54,9 @@ export const getBingConnection = createServerFn({ method: "POST" })
  *  and only persisted by setBingSite. */
 export const listBingSites = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
-  .validator(projectScopedSchema.extend({ apiKey: z.string().min(1).optional() }))
+  .validator(
+    projectScopedSchema.extend({ apiKey: z.string().min(1).optional() }),
+  )
   .handler(async ({ data, context }) => {
     const [sites, connection] = await Promise.all([
       BingWebmasterService.listSites({

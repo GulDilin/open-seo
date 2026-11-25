@@ -90,9 +90,10 @@ function BingConnectedState({
   );
 }
 
-/** The site list behind a freshly entered API key. The key lives only in this
- *  component's state — it is sent when sites are loaded and again when the
- *  chosen site is saved, and never comes back. */
+/** The site list behind the typed API key, or behind the project's stored key
+ *  when the flow started from "Change site" (empty apiKey). The key lives only
+ *  in this component's state — it is sent when sites are loaded and again when
+ *  the chosen site is saved, and never comes back. */
 function BingSitePicker({
   projectId,
   apiKey,
@@ -114,7 +115,11 @@ function BingSitePicker({
 }) {
   const sitesQuery = useQuery({
     queryKey: ["bingSites", projectId, apiKey],
-    queryFn: () => listBingSites({ data: { projectId, apiKey } }),
+    // An empty apiKey means the stored key is used server-side.
+    queryFn: () =>
+      listBingSites({
+        data: apiKey ? { projectId, apiKey } : { projectId },
+      }),
     staleTime: Infinity,
   });
   const sites: SiteEntry[] = sitesQuery.data?.sites ?? [];
@@ -260,7 +265,9 @@ export function BingConnectionCard({ projectId }: { projectId: string }) {
     meta: { errorToast: false },
     mutationFn: (site: SiteEntry) =>
       setBingSite({
-        data: { projectId, apiKey: apiKey ?? "", siteUrl: site.siteUrl },
+        data: apiKey
+          ? { projectId, apiKey, siteUrl: site.siteUrl }
+          : { projectId, siteUrl: site.siteUrl },
       }),
     onSuccess: () => {
       toast.success("Bing Webmaster connected");
@@ -276,8 +283,7 @@ export function BingConnectionCard({ projectId }: { projectId: string }) {
     },
   });
 
-  const changing =
-    setSiteMutation.isPending || disconnectMutation.isPending;
+  const changing = setSiteMutation.isPending || disconnectMutation.isPending;
 
   return (
     <CardShell
@@ -333,10 +339,7 @@ export function BingConnectionCard({ projectId }: { projectId: string }) {
           onSave={(site) => setSiteMutation.mutate(site)}
         />
       ) : (
-        <ApiKeyForm
-          changing={changing}
-          onSubmit={(key) => setApiKey(key)}
-        />
+        <ApiKeyForm changing={changing} onSubmit={(key) => setApiKey(key)} />
       )}
       {setSiteMutation.isError || disconnectMutation.isError ? (
         <p role="alert" className="mt-3 text-sm text-destructive">

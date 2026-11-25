@@ -117,9 +117,7 @@ function BingLinksPanel({
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-border bg-card px-3 py-2">
-          <p className="text-xs text-muted-foreground">
-            Links to loaded pages
-          </p>
+          <p className="text-xs text-muted-foreground">Links to loaded pages</p>
           <p className="mt-0.5 text-lg font-semibold tabular-nums">
             {formatCount(data.loadedLinksTotal)}
           </p>

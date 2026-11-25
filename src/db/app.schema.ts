@@ -480,7 +480,9 @@ export const webmasterBacklinkSnapshots = sqliteTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    source: text("source", { enum: ["yandex_webmaster", "bing_webmaster"] }).notNull(),
+    source: text("source", {
+      enum: ["yandex_webmaster", "bing_webmaster"],
+    }).notNull(),
     // The date the webmaster reported the count FOR (UTC day).
     date: text("date").notNull(),
     linksTotalCount: integer("links_total_count").notNull(),
@@ -508,7 +510,9 @@ export const webmasterBacklinkSamples = sqliteTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    source: text("source", { enum: ["yandex_webmaster", "bing_webmaster"] }).notNull(),
+    source: text("source", {
+      enum: ["yandex_webmaster", "bing_webmaster"],
+    }).notNull(),
     sourceUrl: text("source_url").notNull(),
     destinationUrl: text("destination_url").notNull(),
     // Nullable: the API may omit them for a given link.

@@ -76,15 +76,17 @@ describe("BingConnectionRepository", () => {
   });
 
   it("removes the connection when its project is deleted", async () => {
-    await BingConnectionRepository.upsert(connection("p1", "enc:key", "http://example.com/"));
+    await BingConnectionRepository.upsert(
+      connection("p1", "enc:key", "http://example.com/"),
+    );
     state.database!.exec("DELETE FROM projects WHERE id = 'p1'");
-    expect(
-      await BingConnectionRepository.getByProjectId("p1"),
-    ).toBeNull();
+    expect(await BingConnectionRepository.getByProjectId("p1")).toBeNull();
   });
 
   it("drops the row on disconnect", async () => {
-    await BingConnectionRepository.upsert(connection("p1", "enc:key", "http://example.com/"));
+    await BingConnectionRepository.upsert(
+      connection("p1", "enc:key", "http://example.com/"),
+    );
     await BingConnectionRepository.deleteByProjectId("p1");
     expect(await BingConnectionRepository.getByProjectId("p1")).toBeNull();
   });

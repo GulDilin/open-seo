@@ -191,10 +191,7 @@ export function getProjectNavGroups(projectId: string) {
     },
     {
       label: "Bing Webmaster",
-      items: [
-        byPath("/p/$projectId/bing"),
-        byPath("/p/$projectId/bing/links"),
-      ],
+      items: [byPath("/p/$projectId/bing"), byPath("/p/$projectId/bing/links")],
     },
     {
       label: "AI Tools",

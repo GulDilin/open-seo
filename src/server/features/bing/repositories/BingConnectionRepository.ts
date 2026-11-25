@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { bingConnections } from "@/db/schema";
 
-export type BingConnection = typeof bingConnections.$inferSelect;
+type BingConnection = typeof bingConnections.$inferSelect;
 
 async function getByProjectId(
   projectId: string,
@@ -43,7 +43,9 @@ async function upsert(input: {
 }
 
 async function deleteByProjectId(projectId: string): Promise<void> {
-  await db.delete(bingConnections).where(eq(bingConnections.projectId, projectId));
+  await db
+    .delete(bingConnections)
+    .where(eq(bingConnections.projectId, projectId));
 }
 
 export const BingConnectionRepository = {

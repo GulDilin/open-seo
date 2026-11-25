@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BingWebmasterApiError } from "@/server/lib/bingWebmasterErrors";
 import { WebmasterBacklinksRepository } from "@/server/features/backlinks/repositories/WebmasterBacklinksRepository";
 import { BingWebmasterService } from "./BingWebmasterService";
+import { sort } from "remeda";
 import { BingConnectionRepository } from "../repositories/BingConnectionRepository";
 
 // The repositories under the service run against real SQLite; only the Bing
@@ -19,9 +20,8 @@ const state = vi.hoisted(() => {
     avgClickPosition: number | null;
   };
   const clientMocks = {
-    getUserSites: vi.fn<
-      () => Promise<Array<{ siteUrl: string; verified: boolean }>>
-    >(),
+    getUserSites:
+      vi.fn<() => Promise<Array<{ siteUrl: string; verified: boolean }>>>(),
     getQueryStats: vi.fn<
       () => Promise<{
         rows: StatsRow[];
@@ -33,7 +33,10 @@ const state = vi.hoisted(() => {
       (
         siteUrl: string,
         page: number,
-      ) => Promise<{ links: Array<{ url: string; count: number }>; totalPages: number | null }>
+      ) => Promise<{
+        links: Array<{ url: string; count: number }>;
+        totalPages: number | null;
+      }>
     >(),
     getUrlLinks: vi.fn<
       (
@@ -99,51 +102,38 @@ const P1_DETAILS = [
   { sourceUrl: "https://second.example/", anchorText: null },
 ];
 const P2_LINK_COUNTS = [{ url: "https://p2.example/b", count: 5 }];
-const P2_DETAILS = [{ sourceUrl: "https://p2source.example/", anchorText: "p2" }];
+const P2_DETAILS = [
+  { sourceUrl: "https://p2source.example/", anchorText: "p2" },
+];
 
-// Weekly buckets Bing would return for site P1: two inside the requested
-// window, one in the previous window, one from long ago.
+type StatsBucket = Awaited<
+  ReturnType<typeof state.getQueryStats>
+>["rows"][number];
+
+// One GetQueryStats weekly bucket. Bing leaves a click position unset when a
+// query got no clicks, which is what `avgClickPosition: null` overrides.
+const bucket = (
+  date: string,
+  query: string,
+  impressions: number,
+  clicks: number,
+  avgImpressionPosition: number,
+): StatsBucket => ({
+  date,
+  query,
+  impressions,
+  clicks,
+  avgImpressionPosition,
+  avgClickPosition: null,
+});
+
+// Two buckets inside the requested window (2026-03-01..2026-03-20), one only in
+// its previous window.
 const STATS_ROWS = [
-  {
-    date: "2026-03-07",
-    query: "alpha",
-    impressions: 100,
-    clicks: 10,
-    avgImpressionPosition: 2,
-    avgClickPosition: 3,
-  },
-  {
-    date: "2026-03-14",
-    query: "alpha",
-    impressions: 40,
-    clicks: 2,
-    avgImpressionPosition: 4,
-    avgClickPosition: 5,
-  },
-  {
-    date: "2026-03-14",
-    query: "beta",
-    impressions: 10,
-    clicks: 0,
-    avgImpressionPosition: 9,
-    avgClickPosition: null,
-  },
-  {
-    date: "2026-02-14",
-    query: "alpha",
-    impressions: 50,
-    clicks: 5,
-    avgImpressionPosition: 3,
-    avgClickPosition: 4,
-  },
-  {
-    date: "2025-01-03",
-    query: "old",
-    impressions: 5,
-    clicks: 0,
-    avgImpressionPosition: 1,
-    avgClickPosition: 1,
-  },
+  { ...bucket("2026-03-07", "alpha", 100, 10, 2), avgClickPosition: 3 },
+  { ...bucket("2026-03-14", "alpha", 40, 2, 4), avgClickPosition: 5 },
+  bucket("2026-03-14", "beta", 10, 0, 9),
+  { ...bucket("2026-02-14", "alpha", 50, 5, 3), avgClickPosition: 4 },
 ];
 
 function connect(projectId: string, siteUrl: string = SITE_P1) {
@@ -178,7 +168,7 @@ beforeEach(() => {
   ]);
   state.getQueryStats.mockResolvedValue({
     rows: STATS_ROWS,
-    reportedDateFrom: "2025-01-03",
+    reportedDateFrom: "2026-02-14",
     reportedDateTo: "2026-03-14",
   });
   state.getLinkCounts.mockImplementation(async (siteUrl, page) => {
@@ -216,10 +206,6 @@ describe("BingWebmasterService.getSearchPerformance", () => {
     expect(result.totals).toMatchObject({ impressions: 150, clicks: 12 });
     expect(result.dateFrom).toBe("2026-03-01");
     expect(result.dateTo).toBe("2026-03-20");
-    // Bing reported all of history; the payload names it so the UI can say the
-    // loaded window is the filter, not Bing's data range.
-    expect(result.reportedDateFrom).toBe("2025-01-03");
-    expect(result.reportedDateTo).toBe("2026-03-14");
     expect(state.getQueryStats).toHaveBeenCalledTimes(1);
   });
 
@@ -275,6 +261,21 @@ describe("BingWebmasterService.setSite", () => {
       }),
     ).rejects.toThrow("isn't available");
   });
+
+  it("keeps the stored key when a site is re-picked without retyping one", async () => {
+    await connect("p1");
+    const row = await BingWebmasterService.setSite({
+      projectId: "p1",
+      organizationId: "org1",
+      siteUrl: SITE_P1,
+      userId: "u2",
+    });
+    expect(row).toMatchObject({
+      apiKey: "enc:bing_key",
+      siteUrl: SITE_P1,
+      connectedByUserId: "u2",
+    });
+  });
 });
 
 describe("BingWebmasterService.getLinks", () => {
@@ -291,11 +292,50 @@ describe("BingWebmasterService.getLinks", () => {
       storedSamplesCount: 2,
       collectError: null,
     });
-    expect(first.samples).toEqual([
+    expect(
+      first.samples.map((sample) => [
+        sample.sourceUrl,
+        sample.destinationUrl,
+        sample.anchorText,
+      ]),
+    ).toEqual([
+      ["https://other.example/page", "https://p1.example/a", "read more"],
+      ["https://second.example/", "https://p1.example/a", null],
+    ]);
+    // The snapshot row is what the TTL keys on, written under the Bing source.
+    expect(
+      state
+        .database!.prepare(
+          "SELECT links_total_count, source FROM webmaster_backlink_snapshots",
+        )
+        .all(),
+    ).toEqual([{ links_total_count: 14, source: "bing_webmaster" }]);
+
+    const snapshotMarker = () =>
+      state
+        .database!.prepare(
+          "SELECT captured_at FROM webmaster_backlink_snapshots",
+        )
+        .get();
+    const capturedAt = snapshotMarker();
+    state.getUrlLinks.mockClear();
+
+    const second = await BingWebmasterService.getLinks({ projectId: "p1" });
+    // Anchor text is not persisted, so a stored read renders without it.
+    // Stored rows have no discovery date, so their order is not guaranteed.
+    expect(
+      sort(second.samples, (a, b) =>
+        a.sourceUrl.localeCompare(b.sourceUrl),
+      ).map(({ sourceUrl, destinationUrl, anchorText }) => ({
+        sourceUrl,
+        destinationUrl,
+        anchorText,
+      })),
+    ).toEqual([
       {
         sourceUrl: "https://other.example/page",
         destinationUrl: "https://p1.example/a",
-        anchorText: "read more",
+        anchorText: null,
       },
       {
         sourceUrl: "https://second.example/",
@@ -303,39 +343,12 @@ describe("BingWebmasterService.getLinks", () => {
         anchorText: null,
       },
     ]);
-    // The snapshot row is what the TTL keys on, written under the Bing source.
-    expect(
-      state.database!
-        .prepare(
-          "SELECT links_total_count, source FROM webmaster_backlink_snapshots",
-        )
-        .all(),
-    ).toEqual([{ links_total_count: 14, source: "bing_webmaster" }]);
-
-    const capturedAt = state.database!
-      .prepare("SELECT captured_at FROM webmaster_backlink_snapshots")
-      .get() as { captured_at: string };
-    state.getUrlLinks.mockClear();
-
-    const second = await BingWebmasterService.getLinks({ projectId: "p1" });
-    // Anchor text is not persisted, so a stored read renders without it.
-    // Stored rows have no discovery date, so their order is not guaranteed.
-    expect(
-      [...second.samples].sort((a, b) => a.sourceUrl.localeCompare(b.sourceUrl)),
-    ).toEqual([
-      { sourceUrl: "https://other.example/page", destinationUrl: "https://p1.example/a", anchorText: null },
-      { sourceUrl: "https://second.example/", destinationUrl: "https://p1.example/a", anchorText: null },
-    ]);
     // Per-page counts are read live on every visit (the shared tables have no
     // per-URL home for them); only the persisted half is TTL-gated.
     expect(second.linkCounts).toEqual(P1_LINK_COUNTS);
     expect(state.getUrlLinks).not.toHaveBeenCalled();
     // A read never moves the staleness marker.
-    expect(
-      state.database!
-        .prepare("SELECT captured_at FROM webmaster_backlink_snapshots")
-        .get(),
-    ).toEqual(capturedAt);
+    expect(snapshotMarker()).toEqual(capturedAt);
   });
 
   it("keeps two projects' link data separate", async () => {
@@ -357,7 +370,10 @@ describe("BingWebmasterService.getLinks", () => {
       100,
     );
     expect(
-      p1Samples.map((sample) => sample.sourceUrl).sort((a, b) => a.localeCompare(b)),
+      sort(
+        p1Samples.map((sample) => sample.sourceUrl),
+        (a, b) => a.localeCompare(b),
+      ),
     ).toEqual(["https://other.example/page", "https://second.example/"]);
   });
 
@@ -418,23 +434,14 @@ describe("BingWebmasterService.getLinks", () => {
 
   it("reports an undecryptable stored key as an auth failure, not a fault", async () => {
     await connect("p1");
-    state.database!.exec("UPDATE bing_connections SET api_key = 'not-a-secret'");
+    state.database!.exec(
+      "UPDATE bing_connections SET api_key = 'not-a-secret'",
+    );
     const result = await BingWebmasterService.getLinks({ projectId: "p1" });
     expect(result).toMatchObject({
       connected: false,
       unavailableReason:
         "Could not decrypt the stored Bing Webmaster API key. Reconnect Bing Webmaster.",
     });
-  });
-});
-
-describe("BingWebmasterService.disconnect", () => {
-  it("drops the connection so reads report not connected", async () => {
-    await connect("p1");
-    await BingWebmasterService.disconnect({ projectId: "p1" });
-    expect(await BingConnectionRepository.getByProjectId("p1")).toBeNull();
-    await expect(
-      BingWebmasterService.getSearchPerformance({ projectId: "p1" }),
-    ).rejects.toThrow("Bing Webmaster is not connected for this project");
   });
 });

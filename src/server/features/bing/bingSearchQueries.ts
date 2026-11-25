@@ -1,3 +1,4 @@
+import { sort } from "remeda";
 import type { BingQueryStatsRow } from "@/server/lib/bingWebmasterClient";
 
 // Shared option sets — also drive the server-function Zod schemas so the two
@@ -100,17 +101,17 @@ export function aggregateBingQueryStats(
       query,
       impressions,
       clicks,
-      avgImpressionPosition: weightedPosition(
+      avgImpressionPosition: averagePosition(
         buckets.map((b) => [b.avgImpressionPosition, b.impressions] as const),
       ),
-      avgClickPosition: weightedPosition(
+      avgClickPosition: averagePosition(
         buckets.map((b) => [b.avgClickPosition, b.impressions] as const),
       ),
     };
   });
 }
 
-function weightedPosition(
+function averagePosition(
   pairs: ReadonlyArray<readonly [number | null, number | null]>,
 ): number | null {
   let weighted = 0;
@@ -128,14 +129,14 @@ function weightedPosition(
 export function sumBingQueryTotals(rows: BingQueryRow[]): BingQueryTotals {
   let clicks = 0;
   let impressions = 0;
-  let weightedPosition = 0;
+  let weightedSum = 0;
   let positionWeight = 0;
   for (const row of rows) {
     const rowImpressions = row.impressions ?? 0;
     clicks += row.clicks ?? 0;
     impressions += rowImpressions;
     if (row.avgImpressionPosition !== null && rowImpressions > 0) {
-      weightedPosition += row.avgImpressionPosition * rowImpressions;
+      weightedSum += row.avgImpressionPosition * rowImpressions;
       positionWeight += rowImpressions;
     }
   }
@@ -143,7 +144,7 @@ export function sumBingQueryTotals(rows: BingQueryRow[]): BingQueryTotals {
     clicks,
     impressions,
     ctr: impressions > 0 ? clicks / impressions : null,
-    position: positionWeight > 0 ? weightedPosition / positionWeight : null,
+    position: positionWeight > 0 ? weightedSum / positionWeight : null,
   };
 }
 
@@ -165,5 +166,6 @@ export function orderBingQueryRows(
   orderBy: BingQueryOrder,
 ): BingQueryRow[] {
   const key = (row: BingQueryRow) => row[orderBy] ?? 0;
-  return [...rows].sort((a, b) => key(b) - key(a));
+  // Remeda's sort copies, so the caller's array is left as fetched.
+  return sort(rows, (a, b) => key(b) - key(a));
 }

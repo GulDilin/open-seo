@@ -110,7 +110,7 @@ export type BingQueryStatsRow = {
   avgClickPosition: number | null;
 };
 
-export type BingQueryStats = {
+type BingQueryStats = {
   rows: BingQueryStatsRow[];
   /** First and last weekly bucket Bing reported, or null when it has none. */
   reportedDateFrom: string | null;
@@ -124,7 +124,7 @@ export type BingLinkCounts = {
   totalPages: number | null;
 };
 
-export type BingLinkDetails = {
+type BingLinkDetails = {
   details: Array<{ sourceUrl: string; anchorText: string | null }>;
   totalPages: number | null;
 };
@@ -153,9 +153,7 @@ function toIsoDate(value: string): string | null {
 async function parseError(status: number, body: string): Promise<never> {
   let wire: z.infer<typeof errorResponseSchema> = {};
   try {
-    const parsed = errorResponseSchema.safeParse(
-      body ? JSON.parse(body) : {},
-    );
+    const parsed = errorResponseSchema.safeParse(body ? JSON.parse(body) : {});
     if (parsed.success) wire = parsed.data;
   } catch {
     // Non-JSON error body — fall through with the message below.
@@ -180,10 +178,7 @@ export function createBingWebmasterClient(opts: { apiKey: string }) {
       headers: { Accept: "application/json" },
     });
     if (!response.ok) {
-      await parseError(
-        response.status,
-        await response.text().catch(() => ""),
-      );
+      await parseError(response.status, await response.text().catch(() => ""));
     }
     let data: unknown;
     try {
@@ -217,10 +212,8 @@ export function createBingWebmasterClient(opts: { apiKey: string }) {
   return {
     /** Every site registered on the key's account. */
     async getUserSites(): Promise<BingSite[]> {
-      const data = await request(
-        "GetUserSites",
-        new URLSearchParams(),
-        (d) => userSitesResponseSchema.parse(d),
+      const data = await request("GetUserSites", new URLSearchParams(), (d) =>
+        userSitesResponseSchema.parse(d),
       );
       return (data.d ?? []).map((site) => ({
         siteUrl: site.Url,
@@ -254,11 +247,17 @@ export function createBingWebmasterClient(opts: { apiKey: string }) {
         rows,
         reportedDateFrom:
           rows.length > 0
-            ? rows.reduce((min, row) => (row.date < min ? row.date : min), rows[0].date)
+            ? rows.reduce(
+                (min, row) => (row.date < min ? row.date : min),
+                rows[0].date,
+              )
             : null,
         reportedDateTo:
           rows.length > 0
-            ? rows.reduce((max, row) => (row.date > max ? row.date : max), rows[0].date)
+            ? rows.reduce(
+                (max, row) => (row.date > max ? row.date : max),
+                rows[0].date,
+              )
             : null,
       };
     },
@@ -266,7 +265,10 @@ export function createBingWebmasterClient(opts: { apiKey: string }) {
     /** One page of the site's URLs with inbound-link counts. `page` is
      *  0-based; Bing's page size is not documented, so callers stop on an
      *  empty page or their own cap. */
-    async getLinkCounts(siteUrl: string, page: number): Promise<BingLinkCounts> {
+    async getLinkCounts(
+      siteUrl: string,
+      page: number,
+    ): Promise<BingLinkCounts> {
       const data = await request(
         "GetLinkCounts",
         new URLSearchParams({ siteUrl, page: String(page) }),
