@@ -338,8 +338,13 @@ export function BingConnectionCard({ projectId }: { projectId: string }) {
           }}
           onSave={(site) => setSiteMutation.mutate(site)}
         />
-      ) : (
+      ) : canManage ? (
         <ApiKeyForm changing={changing} onSubmit={(key) => setApiKey(key)} />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Connect Bing Webmaster to see this project's Bing search performance
+          and external links.
+        </p>
       )}
       {setSiteMutation.isError || disconnectMutation.isError ? (
         <p role="alert" className="mt-3 text-sm text-destructive">
