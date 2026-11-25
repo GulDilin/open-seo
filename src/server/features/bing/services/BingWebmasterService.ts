@@ -89,14 +89,19 @@ async function disconnect(input: { projectId: string }): Promise<void> {
 }
 
 /** Expected ways the stored key fails to reach the Bing Webmaster API: the key
- *  could not be decrypted, or Bing rejected it (HTTP 400 "InvalidApiKey" is
- *  how Bing reports a dead key). These surface a reconnect prompt without
- *  fault logging. */
+ *  could not be decrypted, or Bing rejected it — HTTP 400 with Message
+ *  "InvalidApiKey" (ErrorCode 3) is how Bing reports a dead key. These surface
+ *  a reconnect prompt without fault logging. */
 export function isExpectedAuthFailure(error: unknown): boolean {
   if (error instanceof BingWebmasterTokenError) return true;
   if (!(error instanceof BingWebmasterApiError)) return false;
   if (error.status === 401 || error.status === 403) return true;
-  return /invalid api key/i.test(error.message);
+  // The documented body is {"ErrorCode":3,"Message":"InvalidApiKey"}; spacing
+  // and casing vary across error bodies, so compare the letters only.
+  return (
+    error.errorCode === 3 ||
+    /invalidapikey/i.test(error.message.replace(/[^a-z]/gi, ""))
+  );
 }
 
 async function openClient(connection: {
@@ -169,12 +174,9 @@ async function getSearchPerformance(input: {
   const ordered = orderBingQueryRows(rows, orderBy);
 
   // The comparison window mirrors the previous same-length period ending right
-  // before the reported one, so a site with clamped history compares
-  // like-for-like windows.
-  const changeWindow = previousPeriod(
-    stats.reportedDateFrom ?? dateFrom,
-    stats.reportedDateTo ?? dateTo,
-  );
+  // before the requested one. Buckets Bing already returned fill it, so no
+  // extra API call is needed.
+  const changeWindow = previousPeriod(dateFrom, dateTo);
   const previousRows = aggregateBingQueryStats(
     stats.rows.filter(
       (row) =>

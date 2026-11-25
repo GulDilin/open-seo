@@ -129,12 +129,22 @@ export type BingLinkDetails = {
   totalPages: number | null;
 };
 
-/** Bing JSON dates arrive as "/Date(1316156400000-0700)/" (epoch ms plus an
- *  optional offset); the XML protocol serializes ISO strings for the same
- *  fields. Accept both — only the UTC day is meaningful for weekly buckets. */
+/** Bing JSON dates arrive as "/Date(1316156400000-0700)/" — WCF epoch ms plus
+ *  the offset of Bing's local representation. The trailing offset is what
+ *  makes the bucket's day: 2011-09-16T00:00+03:00 is 2011-09-15T21:00Z, and
+ *  cutting the raw epoch would report the previous day. Shift into the offset
+ *  and cut there. ISO strings (the XML protocol's form) parse directly. */
 function toIsoDate(value: string): string | null {
-  const ms = /^\/Date\((-?\d+)(?:[+-]\d{4})?\)\/$/.exec(value);
-  const time = ms ? Number(ms[1]) : Date.parse(value);
+  const wcf = /^\/Date\((-?\d+)(?:([+-])(\d{2})(\d{2}))?\)\/$/.exec(value);
+  if (wcf) {
+    const offsetMinutes = wcf[2]
+      ? (Number(wcf[3]) * 60 + Number(wcf[4])) * (wcf[2] === "-" ? -1 : 1)
+      : 0;
+    return new Date(Number(wcf[1]) + offsetMinutes * 60_000)
+      .toISOString()
+      .slice(0, 10);
+  }
+  const time = Date.parse(value);
   return Number.isNaN(time) ? null : new Date(time).toISOString().slice(0, 10);
 }
 
