@@ -7,6 +7,8 @@ import {
   normalizeBacklinksTarget,
 } from "@/server/lib/dataforseo";
 import { mapBacklinksRows } from "@/server/features/backlinks/services/backlinksRowMappers";
+import { WebmasterBacklinksRepository } from "@/server/features/backlinks/repositories/WebmasterBacklinksRepository";
+import { safeHostname } from "@/shared/safe-url";
 import {
   referringDomainItemSchema,
   backlinksItemSchema,
@@ -34,14 +36,42 @@ const queriesSchema = z.object({
   baselineStartDate: z.string(),
 });
 
+// The dashboard only lists links Yandex already reported, in the same 7-day
+// window the DataForSEO widget uses. No collect here — collecting makes
+// network calls and would slow every dashboard visit; it happens on the
+// Backlinks page while the stored data is fresh.
+async function listYandexNewLinks(projectId: string) {
+  const from = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
+  const samples = await WebmasterBacklinksRepository.listRecentSamples(
+    projectId,
+    "yandex_webmaster",
+    from,
+    25,
+  );
+  // Same field names as the DataForSEO rows so one table can render both;
+  // Yandex reports no anchor text, link type, rank or spam score.
+  return samples.map((sample) => ({
+    source: "yandex_webmaster" as const,
+    domainFrom: safeHostname(sample.sourceUrl),
+    urlFrom: sample.sourceUrl,
+    urlTo: sample.destinationUrl,
+    anchor: null,
+    isDofollow: null,
+    domainFromRank: null,
+    spamScore: null,
+    firstSeen: sample.discoveryDate,
+    lastSeen: sample.discoveryDate,
+  }));
+}
+
 async function getBacklinks(
-  input: { domain: string; kind: "new" | "lost" | "all" },
+  input: { projectId: string; domain: string; kind: "new" | "lost" | "all" },
   billingCustomer: BillingCustomerContext,
 ) {
   const result = await DashboardCacheService.readThrough({
     namespace: "dashboard:links:v2",
     organizationId: billingCustomer.organizationId,
-    params: input,
+    params: { domain: input.domain, kind: input.kind },
     schema: z.array(backlinksItemSchema),
     maxAgeMs: 86400_000,
     load: async () => {
@@ -74,7 +104,17 @@ async function getBacklinks(
       return response.items;
     },
   });
-  return { ...result, value: mapBacklinksRows(result.value) };
+  return {
+    ...result,
+    value: mapBacklinksRows(result.value).map((row) => ({
+      ...row,
+      source: "dataforseo" as const,
+    })),
+    // Kept out of the DataForSEO rows: Yandex counts its own links, so they
+    // must never inflate DataForSEO numbers — the table labels each row.
+    yandex:
+      input.kind === "new" ? await listYandexNewLinks(input.projectId) : [],
+  };
 }
 
 async function getKeywords(projectId: string, organizationId: string) {
@@ -281,6 +321,7 @@ async function getEmergingQueries(projectId: string, organizationId: string) {
 }
 
 async function getLinkActivity(
+  projectId: string,
   domain: string,
   billingCustomer: BillingCustomerContext,
 ) {
@@ -320,8 +361,12 @@ async function getLinkActivity(
       })),
       kind: "domains" as const,
       links: [],
+      yandex: await listYandexNewLinks(projectId),
     };
-  const links = await getBacklinks({ domain, kind: "new" }, billingCustomer);
+  const links = await getBacklinks(
+    { projectId, domain, kind: "new" },
+    billingCustomer,
+  );
   return { ...links, value: [], kind: "links" as const, links: links.value };
 }
 

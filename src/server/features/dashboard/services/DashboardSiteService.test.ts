@@ -4,12 +4,19 @@ import { GscService } from "@/server/features/gsc/services/GscService";
 import { GscConnectionRepository } from "@/server/features/gsc/repositories/GscConnectionRepository";
 
 const providers = vi.hoisted(() => ({ domains: vi.fn(), links: vi.fn() }));
+// Read-only store: the dashboard lists stored Yandex samples and must never
+// collect, so the mock exposes only the read.
+const webmasterBacklinks = vi.hoisted(() => ({ listRecentSamples: vi.fn() }));
 vi.mock("@/server/lib/dataforseo", async () => ({
   ...(await import("@/server/lib/dataforseoBacklinksTarget")),
   createDataforseoClient: () => ({
     backlinks: { referringDomains: providers.domains, rows: providers.links },
   }),
 }));
+vi.mock(
+  "@/server/features/backlinks/repositories/WebmasterBacklinksRepository",
+  () => ({ WebmasterBacklinksRepository: webmasterBacklinks }),
+);
 vi.mock("@/server/features/gsc/repositories/GscConnectionRepository", () => ({
   GscConnectionRepository: { getByProjectId: vi.fn() },
 }));
@@ -36,6 +43,7 @@ const performanceBase = {
 beforeEach(() => {
   providers.domains.mockResolvedValue({ items: [] });
   providers.links.mockResolvedValue({ items: [] });
+  webmasterBacklinks.listRecentSamples.mockResolvedValue([]);
   vi.mocked(GscConnectionRepository.getByProjectId).mockResolvedValue({
     id: "connection",
     projectId: "project",
@@ -108,6 +116,7 @@ it("shows new referring domains without paying for a fallback backlink request",
     items: [{ domain: "new.example", backlinks: 2 }],
   });
   const result = await DashboardSiteService.getLinkActivity(
+    "project",
     "example.com",
     customer,
   );
@@ -122,6 +131,7 @@ it("falls back to new backlinks when there are no new referring domains", async 
     items: [{ url_from: "https://existing.example/new-page" }],
   });
   const result = await DashboardSiteService.getLinkActivity(
+    "project",
     "example.com",
     customer,
   );
@@ -129,6 +139,60 @@ it("falls back to new backlinks when there are no new referring domains", async 
     kind: "links",
     links: [{ urlFrom: "https://existing.example/new-page" }],
   });
+});
+
+it("lists stored Yandex links from the same week, read-only, beside the DataForSEO rows", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-20T12:00:00.000Z"));
+  try {
+    webmasterBacklinks.listRecentSamples.mockResolvedValue([
+      {
+        sourceUrl: "https://referring.example/page",
+        destinationUrl: "https://site.example/",
+        discoveryDate: "2026-11-18",
+      },
+    ]);
+    providers.domains.mockResolvedValue({
+      items: [{ domain: "new.example", backlinks: 2 }],
+    });
+    const result = await DashboardSiteService.getLinkActivity(
+      "project",
+      "example.com",
+      customer,
+    );
+    expect(webmasterBacklinks.listRecentSamples).toHaveBeenCalledWith(
+      "project",
+      "yandex_webmaster",
+      "2026-11-13",
+      25,
+    );
+    expect(result.yandex).toEqual([
+      {
+        source: "yandex_webmaster",
+        domainFrom: "referring.example",
+        urlFrom: "https://referring.example/page",
+        urlTo: "https://site.example/",
+        anchor: null,
+        isDofollow: null,
+        domainFromRank: null,
+        spamScore: null,
+        firstSeen: "2026-11-18",
+        lastSeen: "2026-11-18",
+      },
+    ]);
+    expect(result.value).toEqual([
+      { domain: "new.example", backlinks: 2, firstSeen: null },
+    ]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("reads Yandex samples only for the new-links view", async () => {
+  await DashboardSiteService.getBacklinks(
+    { projectId: "project", domain: "example.com", kind: "lost" },
+    customer,
+  );
+  expect(webmasterBacklinks.listRecentSamples).not.toHaveBeenCalled();
 });
 
 it("finds new queries beyond Google's default first page", async () => {

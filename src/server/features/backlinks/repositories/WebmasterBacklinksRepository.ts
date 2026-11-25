@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { reverse } from "remeda";
 import { db } from "@/db";
 import {
@@ -136,6 +136,39 @@ async function listSamples(
   );
 }
 
+/** Samples the webmaster discovered on/after `fromDate` (UTC day), newest
+ *  first. Undated samples never count as new — their age is unknown. Read
+ *  only: callers that need fresh data collect through the service instead. */
+async function listRecentSamples(
+  projectId: string,
+  source: WebmasterBacklinkSource,
+  fromDate: string,
+  limit: number,
+): Promise<
+  Array<{
+    sourceUrl: string;
+    destinationUrl: string;
+    discoveryDate: string | null;
+  }>
+> {
+  return db
+    .select({
+      sourceUrl: webmasterBacklinkSamples.sourceUrl,
+      destinationUrl: webmasterBacklinkSamples.destinationUrl,
+      discoveryDate: webmasterBacklinkSamples.discoveryDate,
+    })
+    .from(webmasterBacklinkSamples)
+    .where(
+      and(
+        eq(webmasterBacklinkSamples.projectId, projectId),
+        eq(webmasterBacklinkSamples.source, source),
+        gte(webmasterBacklinkSamples.discoveryDate, fromDate),
+      ),
+    )
+    .orderBy(desc(webmasterBacklinkSamples.discoveryDate))
+    .limit(limit);
+}
+
 async function countSamples(
   projectId: string,
   source: WebmasterBacklinkSource,
@@ -176,6 +209,7 @@ export const WebmasterBacklinksRepository = {
   saveSamples,
   listSnapshots,
   listSamples,
+  listRecentSamples,
   countSamples,
   lastCollectedAt,
 };

@@ -211,6 +211,63 @@ describe("WebmasterBacklinksRepository samples", () => {
     expect(all[all.length - 1].sourceUrl).toBe("https://unknown.example/");
   });
 
+  it("lists only samples discovered on or after the cutoff, newest first, per project", async () => {
+    await WebmasterBacklinksRepository.saveSamples([
+      {
+        ...sample(
+          "https://newer.example/",
+          "https://site.example/",
+          "2026-01-01T00:00:00.000Z",
+        ),
+        discoveryDate: "2026-03-05",
+      },
+      {
+        ...sample(
+          "https://edge.example/",
+          "https://site.example/",
+          "2026-01-01T00:00:00.000Z",
+        ),
+        discoveryDate: "2026-03-01",
+      },
+      {
+        ...sample(
+          "https://before.example/",
+          "https://site.example/",
+          "2026-01-01T00:00:00.000Z",
+        ),
+        discoveryDate: "2026-02-28",
+      },
+      {
+        ...sample(
+          "https://undated.example/",
+          "https://site.example/",
+          "2026-01-01T00:00:00.000Z",
+        ),
+        discoveryDate: null,
+      },
+      {
+        ...sample(
+          "https://other.example/",
+          "https://site.example/",
+          "2026-01-01T00:00:00.000Z",
+        ),
+        discoveryDate: "2026-03-04",
+        projectId: "p2",
+      },
+    ]);
+
+    expect(
+      (
+        await WebmasterBacklinksRepository.listRecentSamples(
+          "p1",
+          "yandex_webmaster",
+          "2026-03-01",
+          25,
+        )
+      ).map((row) => row.sourceUrl),
+    ).toEqual(["https://newer.example/", "https://edge.example/"]);
+  });
+
   it("removes snapshots and samples when their project is deleted", async () => {
     await WebmasterBacklinksRepository.saveSnapshots([
       snapshot("2026-01-01", 5, "2026-01-01T00:00:00.000Z"),

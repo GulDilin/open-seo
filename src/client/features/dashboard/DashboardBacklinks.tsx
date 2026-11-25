@@ -5,7 +5,9 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
 import { DashboardDataTable } from "./DashboardDataTable";
 import { useState, type ComponentProps } from "react";
+import { sort } from "remeda";
 import { TabsTrigger } from "@/client/components/ui/tabs";
+import { Badge } from "@/client/components/ui/badge";
 import { getDashboardBacklinks } from "@/serverFunctions/dashboard";
 import {
   DataForSeoRequiredBadge,
@@ -42,7 +44,7 @@ export function DashboardBacklinks({
   if (setup.data && !setup.data.dataforseo) return <DataForSeoRequiredBadge />;
   return (
     <DashboardBacklinkTable
-      rows={query.data?.value ?? []}
+      rows={withYandexNewLinks(query.data, kind)}
       kind={kind}
       isLoading={query.isPending}
       error={
@@ -78,9 +80,25 @@ export function DashboardBacklinks({
   );
 }
 
-type Backlink = Awaited<
-  ReturnType<typeof getDashboardBacklinks>
->["value"][number];
+type DashboardBacklinksData = Awaited<ReturnType<typeof getDashboardBacklinks>>;
+type Backlink =
+  | DashboardBacklinksData["value"][number]
+  | DashboardBacklinksData["yandex"][number];
+
+// Yandex reports its own link pool, so its rows stay out of the DataForSEO
+// arrays server-side and only join the table here — as the "new this week"
+// list, sorted by discovery date across both sources.
+function withYandexNewLinks(
+  data: DashboardBacklinksData | undefined,
+  kind: Kind,
+): Backlink[] {
+  if (!data) return [];
+  if (kind !== "new" || data.yandex.length === 0) return data.value;
+  return sort([...data.value, ...data.yandex], (a, b) =>
+    (b.firstSeen ?? "").localeCompare(a.firstSeen ?? ""),
+  );
+}
+
 function DashboardBacklinkTable({
   rows,
   kind,
@@ -92,6 +110,7 @@ function DashboardBacklinkTable({
   ComponentProps<typeof DashboardDataTable>,
   "tabs" | "isLoading" | "error"
 >) {
+  const hasYandex = rows.some((row) => row.source === "yandex_webmaster");
   const columns: ColumnDef<Backlink>[] = [
     {
       id: "urlFrom",
@@ -107,6 +126,21 @@ function DashboardBacklinkTable({
       ),
       filterFn: "includesString",
     },
+    ...(hasYandex
+      ? [
+          {
+            accessorKey: "source",
+            header: "Source",
+            cell: ({ row }: { row: { original: Backlink } }) => (
+              <Badge variant="outline" size="sm">
+                {row.original.source === "yandex_webmaster"
+                  ? "Yandex Webmaster"
+                  : "DataForSEO"}
+              </Badge>
+            ),
+          } satisfies ColumnDef<Backlink>,
+        ]
+      : []),
     {
       accessorKey: "anchor",
       header: "Anchor",
@@ -128,7 +162,14 @@ function DashboardBacklinkTable({
     },
     {
       id: "follow",
-      accessorFn: (row) => (row.isDofollow ? "Follow" : "Nofollow"),
+      // Unknown (Yandex rows, and DataForSEO rows without the attribute) is not
+      // a nofollow link — show a dash and let both filters exclude it.
+      accessorFn: (row) =>
+        row.isDofollow == null ? "" : row.isDofollow ? "Follow" : "Nofollow",
+      cell: ({ row }) => {
+        const value = row.original.isDofollow;
+        return value == null ? "—" : value ? "Follow" : "Nofollow";
+      },
       header: "Link type",
       filterFn: "equalsString",
     },
