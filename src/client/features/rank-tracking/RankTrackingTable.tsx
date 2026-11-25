@@ -12,7 +12,10 @@ import {
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { SortingState } from "@tanstack/react-table";
 import { removeTrackingKeywords } from "@/serverFunctions/rank-tracking";
-import type { RankTrackingRow } from "@/types/schemas/rank-tracking";
+import type {
+  RankTrackingConfig,
+  RankTrackingRow,
+} from "@/types/schemas/rank-tracking";
 import {
   PINNED_COLUMN_ID,
   useRankTrackingColumns,
@@ -33,6 +36,7 @@ export function RankTrackingTable({
   sorting,
   onSortingChange,
   domain,
+  searchEngine,
   configId,
   projectId,
   locationCode,
@@ -49,6 +53,7 @@ export function RankTrackingTable({
   sorting: SortingState;
   onSortingChange: (sorting: SortingState) => void;
   domain: string;
+  searchEngine: RankTrackingConfig["searchEngine"];
   configId: string;
   projectId: string;
   locationCode: number;
@@ -79,6 +84,7 @@ export function RankTrackingTable({
     showDesktop,
     showMobile,
     domain,
+    searchEngine,
     selectAnchorRef,
     onKeywordClick: handleKeywordClick,
     onSetPinned: setKeywordPinned,

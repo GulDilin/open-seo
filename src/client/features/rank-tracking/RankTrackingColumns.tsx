@@ -6,7 +6,11 @@ import { ScoreBadge } from "@/client/components/table/ScoreBadge";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
-import type { RankTrackingRow } from "@/types/schemas/rank-tracking";
+import type {
+  RankTrackingConfig,
+  RankTrackingRow,
+} from "@/types/schemas/rank-tracking";
+import { SEARCH_ENGINE_LABELS } from "@/shared/search-engines";
 import { formatLocationLabel } from "@/shared/keyword-locations";
 import {
   CpcCell,
@@ -20,15 +24,12 @@ import type { SelectionAnchor } from "@/client/components/table/tableSelection";
 export const RANK_TRACKING_HEADER_CLASS =
   "text-xs uppercase tracking-wide text-muted-foreground";
 
+// keyword and the position columns name the engine in their tooltips (see
+// makeKeywordColumn / makeDeviceColumn) — the engine varies per tracker.
 const HEADER_TOOLTIPS: Record<string, string> = {
-  keyword: "The search term being tracked in Google",
   volume: "Estimated monthly search volume from Google",
   kd: "Keyword difficulty score (0-100) — higher means harder to rank",
   cpc: "Average cost per click in Google Ads (USD)",
-  desktopPosition:
-    "Current Google ranking position, showing change from the comparison period",
-  mobilePosition:
-    "Current Google ranking position, showing change from the comparison period",
   url: "The page on your site that ranks for this keyword",
   serp: "Special result features appearing on the search results page (e.g. AI Overview, People Also Ask)",
 };
@@ -108,6 +109,7 @@ const pinnedColumn: ColumnDef<RankTrackingRow> = {
 function makeKeywordColumn(
   onKeywordClick: (row: RankTrackingRow) => void,
   onSetPinned: (vars: { trackingKeywordId: string; pinned: boolean }) => void,
+  engineLabel: string,
 ): ColumnDef<RankTrackingRow> {
   return {
     id: "keyword",
@@ -116,7 +118,7 @@ function makeKeywordColumn(
       <SortableHeader
         column={column}
         label="Keyword"
-        title={HEADER_TOOLTIPS.keyword}
+        title={`The search term being tracked in ${engineLabel}`}
         className={RANK_TRACKING_HEADER_CLASS}
       />
     ),
@@ -139,6 +141,9 @@ function makeKeywordColumn(
         >
           {row.original.keyword}
         </button>
+        <Badge variant="outline" size="sm">
+          {engineLabel}
+        </Badge>
         {row.original.matchCase && (
           <Badge
             variant="secondary"
@@ -182,6 +187,7 @@ function PinButton({
 
 function makeDeviceColumn(
   device: "desktop" | "mobile",
+  engineLabel: string,
 ): ColumnDef<RankTrackingRow> {
   const id = device === "desktop" ? "desktopPosition" : "mobilePosition";
   return {
@@ -191,7 +197,7 @@ function makeDeviceColumn(
       <SortableHeader
         column={column}
         label="Position"
-        title={HEADER_TOOLTIPS[id]}
+        title={`Current ${engineLabel} ranking position, showing change from the comparison period`}
         className={RANK_TRACKING_HEADER_CLASS}
       />
     ),
@@ -250,6 +256,7 @@ export function useRankTrackingColumns(options: {
   showDesktop: boolean;
   showMobile: boolean;
   domain: string;
+  searchEngine: RankTrackingConfig["searchEngine"];
   selectAnchorRef: MutableRefObject<SelectionAnchor | null>;
   onKeywordClick: (row: RankTrackingRow) => void;
   onSetPinned: (vars: { trackingKeywordId: string; pinned: boolean }) => void;
@@ -259,6 +266,7 @@ export function useRankTrackingColumns(options: {
     showDesktop,
     showMobile,
     domain,
+    searchEngine,
     selectAnchorRef,
     onKeywordClick,
     onSetPinned,
@@ -268,17 +276,18 @@ export function useRankTrackingColumns(options: {
     ? formatLocationLabel(locationName, 2)
     : undefined;
   return useMemo(() => {
+    const engineLabel = SEARCH_ENGINE_LABELS[searchEngine];
     const cols: ColumnDef<RankTrackingRow>[] = [
       pinnedColumn,
       makeSelectionColumn<RankTrackingRow>(selectAnchorRef),
-      makeKeywordColumn(onKeywordClick, onSetPinned),
+      makeKeywordColumn(onKeywordClick, onSetPinned, engineLabel),
     ];
     if (showDesktop) {
-      cols.push(makeDeviceColumn("desktop"));
+      cols.push(makeDeviceColumn("desktop", engineLabel));
       cols.push(makeUrlColumn("desktop", domain));
     }
     if (showMobile) {
-      cols.push(makeDeviceColumn("mobile"));
+      cols.push(makeDeviceColumn("mobile", engineLabel));
       cols.push(makeUrlColumn("mobile", domain));
     }
     cols.push(makeVolumeColumn(locationLabel), kdColumn, cpcColumn);
@@ -293,6 +302,7 @@ export function useRankTrackingColumns(options: {
     showDesktop,
     showMobile,
     domain,
+    searchEngine,
     selectAnchorRef,
     onKeywordClick,
     onSetPinned,

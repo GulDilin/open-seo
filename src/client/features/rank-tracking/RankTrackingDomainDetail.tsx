@@ -360,6 +360,7 @@ export function RankTrackingDomainDetail({
                     });
                   }}
                   domain={config.domain}
+                  searchEngine={config.searchEngine}
                   configId={config.id}
                   projectId={projectId}
                   locationCode={config.locationCode}
