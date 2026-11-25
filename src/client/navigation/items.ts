@@ -2,6 +2,7 @@ import {
   Bookmark,
   Bot,
   Brain,
+  ChartColumn,
   ChartLine,
   ClipboardCheck,
   FileSearch,
@@ -59,6 +60,19 @@ const projectNavItems = [
     to: "/p/$projectId/index-status" as const,
     label: "Index Status",
     icon: FileSearch,
+  },
+  {
+    to: "/p/$projectId/yandex" as const,
+    label: "Search Performance",
+    icon: ChartColumn,
+    // The Yandex section has a nested backlinks page; without exact matching
+    // both items would highlight at once.
+    activeOptions: { exact: true, includeSearch: false },
+  },
+  {
+    to: "/p/$projectId/yandex/backlinks" as const,
+    label: "External Links",
+    icon: Link2,
   },
   {
     to: "/p/$projectId/audit" as const,
@@ -154,6 +168,13 @@ export function getProjectNavGroups(projectId: string) {
         byPath("/p/$projectId/saved"),
         byPath("/p/$projectId/index-status"),
         byPath("/p/$projectId/audit"),
+      ],
+    },
+    {
+      label: "Yandex Webmaster",
+      items: [
+        byPath("/p/$projectId/yandex"),
+        byPath("/p/$projectId/yandex/backlinks"),
       ],
     },
     {

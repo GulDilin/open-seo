@@ -211,8 +211,8 @@ function YandexPanel({
 }
 
 /** Webmaster-sourced external links: collected snapshots and samples from
- *  Yandex Webmaster, rendered above the DataForSEO-powered research below.
- *  Free first-party data — shown even without DataForSEO. */
+ *  Yandex Webmaster, on the Yandex section's backlinks page. Free first-party
+ *  data — shown even without DataForSEO. */
 export function WebmasterBacklinksSection({
   projectId,
 }: {
@@ -254,7 +254,7 @@ export function WebmasterBacklinksSection({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Links from Yandex Webmaster</CardTitle>
+        <CardTitle>External links</CardTitle>
         <CardDescription>
           {data.yandex.connected && data.yandex.hostUrl
             ? `Yandex Webmaster reports for ${data.yandex.hostUrl}. Google Search Console does not provide link data through its API.`

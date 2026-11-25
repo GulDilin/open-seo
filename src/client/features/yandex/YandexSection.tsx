@@ -67,7 +67,7 @@ function formatCtr(clicks: number | null, impressions: number | null): string {
   return `${((clicks / impressions) * 100).toFixed(1)}%`;
 }
 
-/** The Yandex tab of Search Performance: site summary plus popular queries.
+/** The Yandex section's performance page: site summary plus popular queries.
  *  Everything shown is what Yandex reported — including the (possibly
  *  shorter) window and nulls for indicators Yandex does not compute. */
 export function YandexSection({ projectId }: { projectId: string }) {

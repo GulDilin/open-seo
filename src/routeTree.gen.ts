@@ -58,6 +58,7 @@ import { Route as AppPProjectIdSamRouteImport } from './routes/_app/p/$projectId
 import { Route as AppPProjectIdSavedRouteImport } from './routes/_app/p/$projectId/saved'
 import { Route as AppPProjectIdSearchPerformanceRouteImport } from './routes/_app/p/$projectId/search-performance'
 import { Route as AppPProjectIdSettingsRouteImport } from './routes/_app/p/$projectId/settings'
+import { Route as AppPProjectIdYandexRouteImport } from './routes/_app/p/$projectId/yandex'
 import { Route as ApiGa4OauthCallbackRouteImport } from './routes/api/ga4/oauth/callback'
 import { Route as ApiGscOauthCallbackRouteImport } from './routes/api/gsc/oauth/callback'
 import { Route as ApiYandexOauthCallbackRouteImport } from './routes/api/yandex/oauth/callback'
@@ -72,6 +73,8 @@ import { Route as AppPProjectIdReportsTemplatesRouteImport } from './routes/_app
 import { Route as AppPProjectIdSettingsIndexRouteImport } from './routes/_app/p/$projectId/settings/index'
 import { Route as AppPProjectIdSettingsContextRouteImport } from './routes/_app/p/$projectId/settings/context'
 import { Route as AppPProjectIdSettingsIntegrationsRouteImport } from './routes/_app/p/$projectId/settings/integrations'
+import { Route as AppPProjectIdYandexIndexRouteImport } from './routes/_app/p/$projectId/yandex/index'
+import { Route as AppPProjectIdYandexBacklinksRouteImport } from './routes/_app/p/$projectId/yandex/backlinks'
 import { Route as AppPProjectIdAiVisibilityPromptsPromptIdRouteImport } from './routes/_app/p/$projectId/ai-visibility/prompts/$promptId'
 import { Route as AppPProjectIdAuditIssuesResultIdRouteImport } from './routes/_app/p/$projectId/audit/issues/$resultId'
 
@@ -326,6 +329,11 @@ const AppPProjectIdSettingsRoute = AppPProjectIdSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppPProjectIdRouteRoute,
 } as any)
+const AppPProjectIdYandexRoute = AppPProjectIdYandexRouteImport.update({
+  id: '/yandex',
+  path: '/yandex',
+  getParentRoute: () => AppPProjectIdRouteRoute,
+} as any)
 const ApiGa4OauthCallbackRoute = ApiGa4OauthCallbackRouteImport.update({
   id: '/api/ga4/oauth/callback',
   path: '/api/ga4/oauth/callback',
@@ -406,6 +414,18 @@ const AppPProjectIdSettingsIntegrationsRoute =
     path: '/integrations',
     getParentRoute: () => AppPProjectIdSettingsRoute,
   } as any)
+const AppPProjectIdYandexIndexRoute =
+  AppPProjectIdYandexIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AppPProjectIdYandexRoute,
+  } as any)
+const AppPProjectIdYandexBacklinksRoute =
+  AppPProjectIdYandexBacklinksRouteImport.update({
+    id: '/backlinks',
+    path: '/backlinks',
+    getParentRoute: () => AppPProjectIdYandexRoute,
+  } as any)
 const AppPProjectIdAiVisibilityPromptsPromptIdRoute =
   AppPProjectIdAiVisibilityPromptsPromptIdRouteImport.update({
     id: '/prompts/$promptId',
@@ -465,6 +485,7 @@ export interface FileRoutesByFullPath {
   '/p/$projectId/saved': typeof AppPProjectIdSavedRoute
   '/p/$projectId/search-performance': typeof AppPProjectIdSearchPerformanceRoute
   '/p/$projectId/settings': typeof AppPProjectIdSettingsRouteWithChildren
+  '/p/$projectId/yandex': typeof AppPProjectIdYandexRouteWithChildren
   '/api/ga4/oauth/callback': typeof ApiGa4OauthCallbackRoute
   '/api/gsc/oauth/callback': typeof ApiGscOauthCallbackRoute
   '/api/yandex/oauth/callback': typeof ApiYandexOauthCallbackRoute
@@ -475,11 +496,13 @@ export interface FileRoutesByFullPath {
   '/p/$projectId/reports/templates': typeof AppPProjectIdReportsTemplatesRoute
   '/p/$projectId/settings/context': typeof AppPProjectIdSettingsContextRoute
   '/p/$projectId/settings/integrations': typeof AppPProjectIdSettingsIntegrationsRoute
+  '/p/$projectId/yandex/backlinks': typeof AppPProjectIdYandexBacklinksRoute
   '/p/$projectId/ai-visibility/': typeof AppPProjectIdAiVisibilityIndexRoute
   '/p/$projectId/audit/': typeof AppPProjectIdAuditIndexRoute
   '/p/$projectId/rank-tracking/': typeof AppPProjectIdRankTrackingIndexRoute
   '/p/$projectId/reports/': typeof AppPProjectIdReportsIndexRoute
   '/p/$projectId/settings/': typeof AppPProjectIdSettingsIndexRoute
+  '/p/$projectId/yandex/': typeof AppPProjectIdYandexIndexRoute
   '/p/$projectId/ai-visibility/prompts/$promptId': typeof AppPProjectIdAiVisibilityPromptsPromptIdRoute
   '/p/$projectId/audit/issues/$resultId': typeof AppPProjectIdAuditIssuesResultIdRoute
 }
@@ -534,11 +557,13 @@ export interface FileRoutesByTo {
   '/p/$projectId/reports/templates': typeof AppPProjectIdReportsTemplatesRoute
   '/p/$projectId/settings/context': typeof AppPProjectIdSettingsContextRoute
   '/p/$projectId/settings/integrations': typeof AppPProjectIdSettingsIntegrationsRoute
+  '/p/$projectId/yandex/backlinks': typeof AppPProjectIdYandexBacklinksRoute
   '/p/$projectId/ai-visibility': typeof AppPProjectIdAiVisibilityIndexRoute
   '/p/$projectId/audit': typeof AppPProjectIdAuditIndexRoute
   '/p/$projectId/rank-tracking': typeof AppPProjectIdRankTrackingIndexRoute
   '/p/$projectId/reports': typeof AppPProjectIdReportsIndexRoute
   '/p/$projectId/settings': typeof AppPProjectIdSettingsIndexRoute
+  '/p/$projectId/yandex': typeof AppPProjectIdYandexIndexRoute
   '/p/$projectId/ai-visibility/prompts/$promptId': typeof AppPProjectIdAiVisibilityPromptsPromptIdRoute
   '/p/$projectId/audit/issues/$resultId': typeof AppPProjectIdAuditIssuesResultIdRoute
 }
@@ -592,6 +617,7 @@ export interface FileRoutesById {
   '/_app/p/$projectId/saved': typeof AppPProjectIdSavedRoute
   '/_app/p/$projectId/search-performance': typeof AppPProjectIdSearchPerformanceRoute
   '/_app/p/$projectId/settings': typeof AppPProjectIdSettingsRouteWithChildren
+  '/_app/p/$projectId/yandex': typeof AppPProjectIdYandexRouteWithChildren
   '/api/ga4/oauth/callback': typeof ApiGa4OauthCallbackRoute
   '/api/gsc/oauth/callback': typeof ApiGscOauthCallbackRoute
   '/api/yandex/oauth/callback': typeof ApiYandexOauthCallbackRoute
@@ -602,11 +628,13 @@ export interface FileRoutesById {
   '/_app/p/$projectId/reports/templates': typeof AppPProjectIdReportsTemplatesRoute
   '/_app/p/$projectId/settings/context': typeof AppPProjectIdSettingsContextRoute
   '/_app/p/$projectId/settings/integrations': typeof AppPProjectIdSettingsIntegrationsRoute
+  '/_app/p/$projectId/yandex/backlinks': typeof AppPProjectIdYandexBacklinksRoute
   '/_app/p/$projectId/ai-visibility/': typeof AppPProjectIdAiVisibilityIndexRoute
   '/_app/p/$projectId/audit/': typeof AppPProjectIdAuditIndexRoute
   '/_app/p/$projectId/rank-tracking/': typeof AppPProjectIdRankTrackingIndexRoute
   '/_app/p/$projectId/reports/': typeof AppPProjectIdReportsIndexRoute
   '/_app/p/$projectId/settings/': typeof AppPProjectIdSettingsIndexRoute
+  '/_app/p/$projectId/yandex/': typeof AppPProjectIdYandexIndexRoute
   '/_app/p/$projectId/ai-visibility/prompts/$promptId': typeof AppPProjectIdAiVisibilityPromptsPromptIdRoute
   '/_app/p/$projectId/audit/issues/$resultId': typeof AppPProjectIdAuditIssuesResultIdRoute
 }
@@ -658,6 +686,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/saved'
     | '/p/$projectId/search-performance'
     | '/p/$projectId/settings'
+    | '/p/$projectId/yandex'
     | '/api/ga4/oauth/callback'
     | '/api/gsc/oauth/callback'
     | '/api/yandex/oauth/callback'
@@ -668,11 +697,13 @@ export interface FileRouteTypes {
     | '/p/$projectId/reports/templates'
     | '/p/$projectId/settings/context'
     | '/p/$projectId/settings/integrations'
+    | '/p/$projectId/yandex/backlinks'
     | '/p/$projectId/ai-visibility/'
     | '/p/$projectId/audit/'
     | '/p/$projectId/rank-tracking/'
     | '/p/$projectId/reports/'
     | '/p/$projectId/settings/'
+    | '/p/$projectId/yandex/'
     | '/p/$projectId/ai-visibility/prompts/$promptId'
     | '/p/$projectId/audit/issues/$resultId'
   fileRoutesByTo: FileRoutesByTo
@@ -727,11 +758,13 @@ export interface FileRouteTypes {
     | '/p/$projectId/reports/templates'
     | '/p/$projectId/settings/context'
     | '/p/$projectId/settings/integrations'
+    | '/p/$projectId/yandex/backlinks'
     | '/p/$projectId/ai-visibility'
     | '/p/$projectId/audit'
     | '/p/$projectId/rank-tracking'
     | '/p/$projectId/reports'
     | '/p/$projectId/settings'
+    | '/p/$projectId/yandex'
     | '/p/$projectId/ai-visibility/prompts/$promptId'
     | '/p/$projectId/audit/issues/$resultId'
   id:
@@ -784,6 +817,7 @@ export interface FileRouteTypes {
     | '/_app/p/$projectId/saved'
     | '/_app/p/$projectId/search-performance'
     | '/_app/p/$projectId/settings'
+    | '/_app/p/$projectId/yandex'
     | '/api/ga4/oauth/callback'
     | '/api/gsc/oauth/callback'
     | '/api/yandex/oauth/callback'
@@ -794,11 +828,13 @@ export interface FileRouteTypes {
     | '/_app/p/$projectId/reports/templates'
     | '/_app/p/$projectId/settings/context'
     | '/_app/p/$projectId/settings/integrations'
+    | '/_app/p/$projectId/yandex/backlinks'
     | '/_app/p/$projectId/ai-visibility/'
     | '/_app/p/$projectId/audit/'
     | '/_app/p/$projectId/rank-tracking/'
     | '/_app/p/$projectId/reports/'
     | '/_app/p/$projectId/settings/'
+    | '/_app/p/$projectId/yandex/'
     | '/_app/p/$projectId/ai-visibility/prompts/$promptId'
     | '/_app/p/$projectId/audit/issues/$resultId'
   fileRoutesById: FileRoutesById
@@ -1171,6 +1207,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPProjectIdSettingsRouteImport
       parentRoute: typeof AppPProjectIdRouteRoute
     }
+    '/_app/p/$projectId/yandex': {
+      id: '/_app/p/$projectId/yandex'
+      path: '/yandex'
+      fullPath: '/p/$projectId/yandex'
+      preLoaderRoute: typeof AppPProjectIdYandexRouteImport
+      parentRoute: typeof AppPProjectIdRouteRoute
+    }
     '/api/ga4/oauth/callback': {
       id: '/api/ga4/oauth/callback'
       path: '/api/ga4/oauth/callback'
@@ -1269,6 +1312,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPProjectIdSettingsIntegrationsRouteImport
       parentRoute: typeof AppPProjectIdSettingsRoute
     }
+    '/_app/p/$projectId/yandex/': {
+      id: '/_app/p/$projectId/yandex/'
+      path: '/'
+      fullPath: '/p/$projectId/yandex/'
+      preLoaderRoute: typeof AppPProjectIdYandexIndexRouteImport
+      parentRoute: typeof AppPProjectIdYandexRoute
+    }
+    '/_app/p/$projectId/yandex/backlinks': {
+      id: '/_app/p/$projectId/yandex/backlinks'
+      path: '/backlinks'
+      fullPath: '/p/$projectId/yandex/backlinks'
+      preLoaderRoute: typeof AppPProjectIdYandexBacklinksRouteImport
+      parentRoute: typeof AppPProjectIdYandexRoute
+    }
     '/_app/p/$projectId/ai-visibility/prompts/$promptId': {
       id: '/_app/p/$projectId/ai-visibility/prompts/$promptId'
       path: '/prompts/$promptId'
@@ -1355,6 +1412,19 @@ const AppPProjectIdSettingsRouteWithChildren =
     AppPProjectIdSettingsRouteChildren,
   )
 
+interface AppPProjectIdYandexRouteChildren {
+  AppPProjectIdYandexBacklinksRoute: typeof AppPProjectIdYandexBacklinksRoute
+  AppPProjectIdYandexIndexRoute: typeof AppPProjectIdYandexIndexRoute
+}
+
+const AppPProjectIdYandexRouteChildren: AppPProjectIdYandexRouteChildren = {
+  AppPProjectIdYandexBacklinksRoute: AppPProjectIdYandexBacklinksRoute,
+  AppPProjectIdYandexIndexRoute: AppPProjectIdYandexIndexRoute,
+}
+
+const AppPProjectIdYandexRouteWithChildren =
+  AppPProjectIdYandexRoute._addFileChildren(AppPProjectIdYandexRouteChildren)
+
 interface AppPProjectIdRouteRouteChildren {
   AppPProjectIdAiVisibilityRoute: typeof AppPProjectIdAiVisibilityRouteWithChildren
   AppPProjectIdBacklinksRoute: typeof AppPProjectIdBacklinksRoute
@@ -1369,6 +1439,7 @@ interface AppPProjectIdRouteRouteChildren {
   AppPProjectIdSavedRoute: typeof AppPProjectIdSavedRoute
   AppPProjectIdSearchPerformanceRoute: typeof AppPProjectIdSearchPerformanceRoute
   AppPProjectIdSettingsRoute: typeof AppPProjectIdSettingsRouteWithChildren
+  AppPProjectIdYandexRoute: typeof AppPProjectIdYandexRouteWithChildren
   AppPProjectIdIndexRoute: typeof AppPProjectIdIndexRoute
   AppPProjectIdReportsReportIdRoute: typeof AppPProjectIdReportsReportIdRoute
   AppPProjectIdReportsTemplatesRoute: typeof AppPProjectIdReportsTemplatesRoute
@@ -1391,6 +1462,7 @@ const AppPProjectIdRouteRouteChildren: AppPProjectIdRouteRouteChildren = {
   AppPProjectIdSavedRoute: AppPProjectIdSavedRoute,
   AppPProjectIdSearchPerformanceRoute: AppPProjectIdSearchPerformanceRoute,
   AppPProjectIdSettingsRoute: AppPProjectIdSettingsRouteWithChildren,
+  AppPProjectIdYandexRoute: AppPProjectIdYandexRouteWithChildren,
   AppPProjectIdIndexRoute: AppPProjectIdIndexRoute,
   AppPProjectIdReportsReportIdRoute: AppPProjectIdReportsReportIdRoute,
   AppPProjectIdReportsTemplatesRoute: AppPProjectIdReportsTemplatesRoute,

@@ -137,7 +137,8 @@ export function positionDelta(
   };
 }
 
-/** The Metric | Value | Change table shared by the Google and Yandex tabs. */
+/** The Metric | Value | Change table shared by the Google totals and the
+ *  Yandex performance page. */
 export function TotalsTable({
   metrics,
   deltaTitle,
