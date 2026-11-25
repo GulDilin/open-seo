@@ -81,7 +81,11 @@ export const getDashboardBacklinks = createServerFn({ method: "POST" })
         "Add your website in project settings first.",
       );
     return DashboardSiteService.getBacklinks(
-      { domain: context.project.domain, kind: data.kind },
+      {
+        projectId: context.projectId,
+        domain: context.project.domain,
+        kind: data.kind,
+      },
       context,
     );
   });
@@ -101,6 +105,7 @@ export const getDashboardLinkActivity = createServerFn({ method: "POST" })
     if (!context.project.domain)
       throw new AppError("VALIDATION_ERROR", "Add your website first.");
     return DashboardSiteService.getLinkActivity(
+      context.projectId,
       context.project.domain,
       context,
     );

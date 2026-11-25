@@ -18,6 +18,16 @@ import {
 } from "@/client/components/ProviderRequiredBadge";
 import { DashboardInfo, ExternalPage, Freshness } from "./siteTabParts";
 import { moreDetailsClass } from "./cardParts";
+
+// DataForSEO rows keep their own shape (referring domains, or backlinks with
+// anchors); Yandex reports only source page → target page and a date, so it
+// renders as its own section. Captions appear only when both sources have rows.
+function SourceCaption({ label }: { label: string }) {
+  return (
+    <p className="mb-1 text-xs font-medium text-muted-foreground">{label}</p>
+  );
+}
+
 export function DashboardLinkActivity({
   projectId,
   domain,
@@ -45,99 +55,162 @@ export function DashboardLinkActivity({
   }
   return (
     <QueryState query={query} errorFallback="Could not load new links">
-      {(data) => (
-        <CardShell
-          title="New backlinks"
-          titleInfo={
-            <DashboardInfo label="About new links">
-              <p>
-                Links to your website found in the past week. We show new
-                linking sites first.
-              </p>
-              <p className="mt-2">
-                A link may be older than the date it was found.
-              </p>
-            </DashboardInfo>
-          }
-          action={
-            <Link
-              to="/p/$projectId"
-              params={{ projectId }}
-              search={{ tab: "backlinks" }}
-              className={moreDetailsClass}
-            >
-              View all →
-            </Link>
-          }
-        >
-          <Freshness {...data} />
-          {data.value.length ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Referring domain</TableHead>
-                  <TableHead className="text-right">Backlinks</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.value.slice(0, 5).map((row, index) => (
-                  <TableRow key={row.domain ?? index}>
-                    <TableCell className="font-medium">
-                      <ExternalPage
-                        url={row.domain ? `https://${row.domain}` : null}
-                        label={row.domain}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {row.backlinks?.toLocaleString() ?? "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : data.links.length ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Referring page</TableHead>
-                  <TableHead>Anchor</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.links.slice(0, 5).map((row, index) => (
-                  <TableRow key={`${row.urlFrom}:${index}`}>
-                    <TableCell>
-                      <ExternalPage url={row.urlFrom} label={row.domainFrom} />
-                    </TableCell>
-                    <TableCell
-                      className="max-w-48 truncate"
-                      title={row.anchor ?? undefined}
-                    >
-                      {row.anchor || "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 py-8 text-center">
-              <Link2 className="size-7 text-muted-foreground" />
-              <h3 className="font-medium">No new links this week</h3>
-              <p className="text-sm text-muted-foreground">
-                Explore the sites already linking to you.
-              </p>
+      {(data) => {
+        const hasDfsRows = data.value.length > 0 || data.links.length > 0;
+        const hasYandexRows = data.yandex.length > 0;
+        return (
+          <CardShell
+            title="New backlinks"
+            titleInfo={
+              <DashboardInfo label="About new links">
+                <p>
+                  Links to your website found in the past week. We show new
+                  linking sites first.
+                </p>
+                <p className="mt-2">
+                  A link may be older than the date it was found.
+                </p>
+                <p className="mt-2">
+                  Links come from DataForSEO and, when Yandex Webmaster is
+                  connected, from Yandex too — each section is labelled.
+                </p>
+              </DashboardInfo>
+            }
+            action={
               <Link
                 to="/p/$projectId"
                 params={{ projectId }}
                 search={{ tab: "backlinks" }}
-                className="text-sm text-primary hover:underline"
+                className={moreDetailsClass}
               >
-                View backlinks →
+                View all →
               </Link>
-            </div>
-          )}
-        </CardShell>
-      )}
+            }
+          >
+            <Freshness {...data} />
+            {hasDfsRows || hasYandexRows ? (
+              <div className="flex flex-col gap-4">
+                {data.value.length ? (
+                  <section>
+                    {hasYandexRows ? (
+                      <SourceCaption label="DataForSEO" />
+                    ) : null}
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Referring domain</TableHead>
+                          <TableHead className="text-right">
+                            Backlinks
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {data.value.slice(0, 5).map((row, index) => (
+                          <TableRow key={row.domain ?? index}>
+                            <TableCell className="font-medium">
+                              <ExternalPage
+                                url={
+                                  row.domain ? `https://${row.domain}` : null
+                                }
+                                label={row.domain}
+                              />
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {row.backlinks?.toLocaleString() ?? "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </section>
+                ) : data.links.length ? (
+                  <section>
+                    {hasYandexRows ? (
+                      <SourceCaption label="DataForSEO" />
+                    ) : null}
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Referring page</TableHead>
+                          <TableHead>Anchor</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {data.links.slice(0, 5).map((row, index) => (
+                          <TableRow key={`${row.urlFrom}:${index}`}>
+                            <TableCell>
+                              <ExternalPage
+                                url={row.urlFrom}
+                                label={row.domainFrom}
+                              />
+                            </TableCell>
+                            <TableCell
+                              className="max-w-48 truncate"
+                              title={row.anchor ?? undefined}
+                            >
+                              {row.anchor || "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </section>
+                ) : null}
+                {hasYandexRows ? (
+                  <section>
+                    {hasDfsRows ? (
+                      <SourceCaption label="Yandex Webmaster" />
+                    ) : null}
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Referring page</TableHead>
+                          <TableHead>Target page</TableHead>
+                          <TableHead className="text-right">Found</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {data.yandex.slice(0, 5).map((row, index) => (
+                          <TableRow key={`${row.urlFrom}:${index}`}>
+                            <TableCell>
+                              <ExternalPage
+                                url={row.urlFrom}
+                                label={row.domainFrom}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <ExternalPage url={row.urlTo} />
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {row.firstSeen?.slice(0, 10) ?? "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </section>
+                ) : null}
+              </div>
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 py-8 text-center">
+                <Link2 className="size-7 text-muted-foreground" />
+                <h3 className="font-medium">No new links this week</h3>
+                <p className="text-sm text-muted-foreground">
+                  Explore the sites already linking to you.
+                </p>
+                <Link
+                  to="/p/$projectId"
+                  params={{ projectId }}
+                  search={{ tab: "backlinks" }}
+                  className="text-sm text-primary hover:underline"
+                >
+                  View backlinks →
+                </Link>
+              </div>
+            )}
+          </CardShell>
+        );
+      }}
     </QueryState>
   );
 }
