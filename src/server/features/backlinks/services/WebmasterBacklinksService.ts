@@ -48,6 +48,17 @@ type WebmasterBacklinksResult = {
   };
 };
 
+type WebmasterRecentSamples = {
+  connected: boolean;
+  unavailableReason: string | null;
+  collectError: string | null;
+  samples: Array<{
+    sourceUrl: string;
+    destinationUrl: string;
+    discoveryDate: string | null;
+  }>;
+};
+
 function emptyYandexPart(
   overrides: Partial<
     Pick<YandexBacklinksPart, "connected" | "hostUrl" | "unavailableReason">
@@ -122,6 +133,43 @@ async function collectFromYandex(input: {
   }
 }
 
+/** Collects from Yandex when the stored data is stale, mapping failures so
+ *  reads can still serve storage: a dead grant becomes `unavailableReason`,
+ *  anything else `collectError`. Never throws. */
+async function collectIfStale(input: {
+  projectId: string;
+  hostId: string;
+  connectedByUserId: string;
+  yandexAccountId: string | null;
+}): Promise<{ unavailableReason: string | null; collectError: string | null }> {
+  const lastCollected = await WebmasterBacklinksRepository.lastCollectedAt(
+    input.projectId,
+    "yandex_webmaster",
+  );
+  const stale =
+    lastCollected === null ||
+    Date.now() - Date.parse(lastCollected) > COLLECT_TTL_MS;
+  if (!stale) return { unavailableReason: null, collectError: null };
+  try {
+    await collectFromYandex(input);
+    return { unavailableReason: null, collectError: null };
+  } catch (error) {
+    if (isExpectedGrantFailure(error)) {
+      return {
+        unavailableReason:
+          error instanceof Error ? error.message : String(error),
+        collectError: null,
+      };
+    }
+    const collectError = error instanceof Error ? error.message : String(error);
+    console.error("webmaster_backlinks_collect_failed", {
+      projectId: input.projectId,
+      reason: collectError,
+    });
+    return { unavailableReason: null, collectError };
+  }
+}
+
 /** The Backlinks-page payload: stored link data for every connected webmaster,
  *  collecting from Yandex first when the stored data is stale. GSC carries
  *  connection state only — its API has no links endpoints (the Links report is
@@ -145,36 +193,12 @@ async function getBacklinks(input: {
     };
   }
 
-  let unavailableReason: string | null = null;
-  let collectError: string | null = null;
-  const lastCollected = await WebmasterBacklinksRepository.lastCollectedAt(
-    input.projectId,
-    "yandex_webmaster",
-  );
-  const stale =
-    lastCollected === null ||
-    Date.now() - Date.parse(lastCollected) > COLLECT_TTL_MS;
-  if (stale) {
-    try {
-      await collectFromYandex({
-        projectId: input.projectId,
-        hostId: yandexConnection.hostId,
-        connectedByUserId: yandexConnection.connectedByUserId,
-        yandexAccountId: yandexConnection.yandexAccountId,
-      });
-    } catch (error) {
-      if (isExpectedGrantFailure(error)) {
-        unavailableReason =
-          error instanceof Error ? error.message : String(error);
-      } else {
-        collectError = error instanceof Error ? error.message : String(error);
-        console.error("webmaster_backlinks_collect_failed", {
-          projectId: input.projectId,
-          reason: collectError,
-        });
-      }
-    }
-  }
+  const { unavailableReason, collectError } = await collectIfStale({
+    projectId: input.projectId,
+    hostId: yandexConnection.hostId,
+    connectedByUserId: yandexConnection.connectedByUserId,
+    yandexAccountId: yandexConnection.yandexAccountId,
+  });
 
   // A dead grant surfaces as disconnected even if older data exists — the
   // numbers would silently stop moving otherwise.
@@ -237,6 +261,56 @@ async function getBacklinks(input: {
   };
 }
 
+/** Dashboard-degradation read: the newest Yandex samples discovered on/after
+ *  `fromDate`, plus the connection state a widget needs to explain an empty
+ *  table. Collects when the stored data is stale (the same TTL gate the
+ *  Backlinks page uses) so a user who never opened it still sees links. Never
+ *  throws — a dead grant is `connected: false` with `unavailableReason`, any
+ *  other refresh failure leaves the stored samples with a `collectError`. */
+async function getRecentSamples(input: {
+  projectId: string;
+  fromDate: string;
+  limit: number;
+}): Promise<WebmasterRecentSamples> {
+  const connection = await YandexConnectionRepository.getByProjectId(
+    input.projectId,
+  );
+  if (!connection)
+    return {
+      connected: false,
+      unavailableReason: null,
+      collectError: null,
+      samples: [],
+    };
+  const { unavailableReason, collectError } = await collectIfStale({
+    projectId: input.projectId,
+    hostId: connection.hostId,
+    connectedByUserId: connection.connectedByUserId,
+    yandexAccountId: connection.yandexAccountId,
+  });
+  // A dead grant surfaces as disconnected even if older samples exist — the
+  // table would silently stop moving otherwise.
+  if (unavailableReason !== null)
+    return {
+      connected: false,
+      unavailableReason,
+      collectError: null,
+      samples: [],
+    };
+  return {
+    connected: true,
+    unavailableReason: null,
+    collectError,
+    samples: await WebmasterBacklinksRepository.listRecentSamples(
+      input.projectId,
+      "yandex_webmaster",
+      input.fromDate,
+      input.limit,
+    ),
+  };
+}
+
 export const WebmasterBacklinksService = {
   getBacklinks,
+  getRecentSamples,
 };

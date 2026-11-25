@@ -9,11 +9,15 @@ import { sort } from "remeda";
 import { TabsTrigger } from "@/client/components/ui/tabs";
 import { Badge } from "@/client/components/ui/badge";
 import { getDashboardBacklinks } from "@/serverFunctions/dashboard";
+import { useSeoProviderSetup } from "@/client/components/ProviderRequiredBadge";
 import {
-  DataForSeoRequiredBadge,
-  useSeoProviderSetup,
-} from "@/client/components/ProviderRequiredBadge";
-import { Freshness, ExternalPage } from "./siteTabParts";
+  ExternalPage,
+  Freshness,
+  useWebmasterLinksQuery,
+  WebmasterLinksUnavailable,
+  YandexSourceNote,
+  type WebmasterLinkRow,
+} from "./siteTabParts";
 const KINDS = ["new", "lost", "all"] as const;
 type Kind = (typeof KINDS)[number];
 
@@ -38,10 +42,13 @@ export function DashboardBacklinks({
     staleTime: 86400_000,
     retry: false,
     // Same DataForSEO gate as the link-activity card: no key, no request —
-    // the badge explains instead of a load error.
+    // Yandex's samples take over instead (see DashboardBacklinksWebmaster).
     enabled: setup.data?.dataforseo === true,
   });
-  if (setup.data && !setup.data.dataforseo) return <DataForSeoRequiredBadge />;
+  // No DataForSEO key: connected Yandex Webmaster samples become the table
+  // instead of a badge. The badge only returns when Yandex is unavailable too.
+  if (setup.data && !setup.data.dataforseo)
+    return <DashboardBacklinksWebmaster projectId={projectId} />;
   return (
     <DashboardBacklinkTable
       rows={withYandexNewLinks(query.data, kind)}
@@ -79,6 +86,76 @@ export function DashboardBacklinks({
     />
   );
 }
+
+// The no-DataForSEO table: what connected Yandex Webmaster reported in the
+// past 30 days, newest first. Without a Yandex connection (or with a dead
+// grant) the DataForSEO badge comes back — nothing else can fill in.
+function DashboardBacklinksWebmaster({ projectId }: { projectId: string }) {
+  const query = useWebmasterLinksQuery(projectId);
+  if (query.data && !query.data.connected)
+    return (
+      <WebmasterLinksUnavailable
+        unavailableReason={query.data.unavailableReason}
+      />
+    );
+  return (
+    <DashboardDataTable
+      rows={query.data?.yandex ?? []}
+      columns={WEBMASTER_COLUMNS}
+      filters={[
+        { id: "urlFrom", label: "Referring page", kind: "text" },
+        { id: "urlTo", label: "Target page", kind: "text" },
+      ]}
+      initialSorting={[{ id: "firstSeen", desc: true }]}
+      isLoading={query.isPending}
+      error={
+        query.isError ? (
+          <QueryError
+            error={query.error}
+            fallback="Could not load backlinks"
+            onRetry={() => void query.refetch()}
+            isRetrying={query.isFetching}
+          />
+        ) : null
+      }
+      tabs={
+        <div className="space-y-3 border-b border-border px-4 pt-3 pb-4">
+          <YandexSourceNote collectError={query.data?.collectError ?? null} />
+        </div>
+      }
+      empty={{
+        title: "No backlinks found by Yandex Webmaster in the past 30 days",
+      }}
+    />
+  );
+}
+
+const WEBMASTER_COLUMNS: ColumnDef<WebmasterLinkRow>[] = [
+  {
+    accessorKey: "urlFrom",
+    header: ({ column }) => (
+      <SortableHeader column={column} label="Referring page" />
+    ),
+    cell: ({ row }) => (
+      <ExternalPage
+        url={row.original.urlFrom}
+        label={row.original.domainFrom}
+      />
+    ),
+    filterFn: "includesString",
+  },
+  {
+    accessorKey: "urlTo",
+    header: "Target page",
+    cell: ({ row }) => <ExternalPage url={row.original.urlTo} />,
+    filterFn: "includesString",
+  },
+  {
+    accessorKey: "firstSeen",
+    header: ({ column }) => <SortableHeader column={column} label="Found" />,
+    cell: ({ getValue }) => (getValue() as string | null)?.slice(0, 10) ?? "—",
+  },
+];
 
 type DashboardBacklinksData = Awaited<ReturnType<typeof getDashboardBacklinks>>;
 type Backlink =

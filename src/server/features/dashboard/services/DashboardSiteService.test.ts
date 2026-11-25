@@ -7,6 +7,9 @@ const providers = vi.hoisted(() => ({ domains: vi.fn(), links: vi.fn() }));
 // Read-only store: the dashboard lists stored Yandex samples and must never
 // collect, so the mock exposes only the read.
 const webmasterBacklinks = vi.hoisted(() => ({ listRecentSamples: vi.fn() }));
+// The degradation read owns its collect rules; its service is mocked so the
+// dashboard's own mapping is what these tests assert.
+const webmasterService = vi.hoisted(() => ({ getRecentSamples: vi.fn() }));
 vi.mock("@/server/lib/dataforseo", async () => ({
   ...(await import("@/server/lib/dataforseoBacklinksTarget")),
   createDataforseoClient: () => ({
@@ -16,6 +19,10 @@ vi.mock("@/server/lib/dataforseo", async () => ({
 vi.mock(
   "@/server/features/backlinks/repositories/WebmasterBacklinksRepository",
   () => ({ WebmasterBacklinksRepository: webmasterBacklinks }),
+);
+vi.mock(
+  "@/server/features/backlinks/services/WebmasterBacklinksService",
+  () => ({ WebmasterBacklinksService: webmasterService }),
 );
 vi.mock("@/server/features/gsc/repositories/GscConnectionRepository", () => ({
   GscConnectionRepository: { getByProjectId: vi.fn() },
@@ -44,6 +51,12 @@ beforeEach(() => {
   providers.domains.mockResolvedValue({ items: [] });
   providers.links.mockResolvedValue({ items: [] });
   webmasterBacklinks.listRecentSamples.mockResolvedValue([]);
+  webmasterService.getRecentSamples.mockResolvedValue({
+    connected: false,
+    unavailableReason: null,
+    collectError: null,
+    samples: [],
+  });
   vi.mocked(GscConnectionRepository.getByProjectId).mockResolvedValue({
     id: "connection",
     projectId: "project",
@@ -193,6 +206,47 @@ it("reads Yandex samples only for the new-links view", async () => {
     customer,
   );
   expect(webmasterBacklinks.listRecentSamples).not.toHaveBeenCalled();
+});
+
+it("degrades the no-DataForSEO widgets to Yandex samples without a DataForSEO request", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-20T12:00:00.000Z"));
+  try {
+    webmasterService.getRecentSamples.mockResolvedValue({
+      connected: true,
+      unavailableReason: null,
+      collectError: null,
+      samples: [
+        {
+          sourceUrl: "https://referring.example/page",
+          destinationUrl: "https://site.example/",
+          discoveryDate: "2026-11-18",
+        },
+      ],
+    });
+    const result = await DashboardSiteService.getWebmasterLinks("project");
+    expect(webmasterService.getRecentSamples).toHaveBeenCalledWith({
+      projectId: "project",
+      fromDate: "2026-10-21",
+      limit: 25,
+    });
+    expect(result).toMatchObject({
+      connected: true,
+      yandex: [
+        {
+          source: "yandex_webmaster",
+          domainFrom: "referring.example",
+          urlFrom: "https://referring.example/page",
+          urlTo: "https://site.example/",
+          firstSeen: "2026-11-18",
+        },
+      ],
+    });
+    expect(providers.domains).not.toHaveBeenCalled();
+    expect(providers.links).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("finds new queries beyond Google's default first page", async () => {

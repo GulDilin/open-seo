@@ -110,3 +110,11 @@ export const getDashboardLinkActivity = createServerFn({ method: "POST" })
       context,
     );
   });
+// The no-DataForSEO degradation branch of the link widgets: Yandex Webmaster
+// samples plus the connection state that explains an empty table.
+export const getDashboardWebmasterLinks = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(dashboardProjectInputSchema)
+  .handler(({ context }) =>
+    DashboardSiteService.getWebmasterLinks(context.projectId),
+  );
