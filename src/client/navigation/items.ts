@@ -63,11 +63,12 @@ const projectNavItems = [
   },
   {
     to: "/p/$projectId/yandex" as const,
-    label: "Search Performance",
+    label: "Performance",
     icon: ChartColumn,
     // The Yandex section has a nested backlinks page; without exact matching
-    // both items would highlight at once.
-    activeOptions: { exact: true, includeSearch: false },
+    // both items would highlight at once. includeSearch stays at the Sidebar
+    // default — only exact matters here.
+    activeOptions: { exact: true },
   },
   {
     to: "/p/$projectId/yandex/backlinks" as const,
