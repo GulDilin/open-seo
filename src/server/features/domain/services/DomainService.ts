@@ -1,4 +1,5 @@
 import { waitUntil } from "cloudflare:workers";
+import { getAhrefsDomainRating } from "@/server/lib/ahrefs";
 import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
 import { z } from "zod";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
@@ -336,18 +337,36 @@ async function getProjectSqi(input: {
 /** A snapshot older than this is considered stale and refreshed on demand. */
 const DOMAIN_RATING_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
+/** Where the displayed domain rating came from, so the UI can label it. */
+type DomainRatingSource = "dataforseo" | "ahrefs";
+
+type ProjectDomainRating = {
+  domain: string | null;
+  rank: number | null;
+  source: DomainRatingSource | null;
+  /** Why the rank is empty — the UI shows it instead of a bare dash. */
+  reason: string | null;
+};
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error && error.message
+    ? error.message
+    : String(error);
+}
+
 /**
- * Ahrefs-style domain rating (DataForSEO's backlinks rank) for the project's
- * own website. Serves the latest backlink snapshot while it is fresh and for
- * the current domain; otherwise refreshes through the same cached overview
- * lookup the Backlinks page uses.
+ * Ahrefs-style domain rating for the project's own website: DataForSEO's
+ * backlinks rank, with the free keyless Ahrefs DR as the fallback. Serves the
+ * latest backlink snapshot while it is fresh and for the current domain;
+ * otherwise refreshes through the same cached overview lookup the Backlinks
+ * page uses. Never throws — an unavailable provider becomes a reason.
  */
 async function getProjectDomainRating(
   input: { projectId: string; domain: string | null },
   billingCustomer: BillingCustomerContext,
-): Promise<{ domain: string | null; rank: number | null }> {
+): Promise<ProjectDomainRating> {
   const domain = input.domain?.trim() ?? "";
-  if (!domain) return { domain: null, rank: null };
+  if (!domain) return { domain: null, rank: null, source: null, reason: null };
 
   const snapshot = await BacklinkSnapshotRepository.getLatestForProject(
     input.projectId,
@@ -360,9 +379,12 @@ async function getProjectDomainRating(
     Number.isFinite(capturedMs) &&
     Date.now() - capturedMs < DOMAIN_RATING_SNAPSHOT_MAX_AGE_MS
   ) {
-    return { domain, rank: snapshot.rank };
+    return { domain, rank: snapshot.rank, source: "dataforseo", reason: null };
   }
 
+  // The first provider failure wins: DataForSEO is the primary source, so its
+  // error is the more actionable one to surface.
+  let firstError: unknown = null;
   try {
     // Whole site, subdomains included — the same target snapshots were
     // captured for. The overview is R2-cached, shared with the Backlinks page.
@@ -370,11 +392,36 @@ async function getProjectDomainRating(
       { target: domain, scope: "subdomains" },
       billingCustomer,
     );
-    return { domain, rank: overview.summary.rank };
-  } catch {
-    // No DataForSEO key or a failed lookup leaves the rating empty, not broken.
-    return { domain, rank: null };
+    if (overview.summary.rank != null) {
+      return {
+        domain,
+        rank: overview.summary.rank,
+        source: "dataforseo",
+        reason: null,
+      };
+    }
+  } catch (error) {
+    firstError = error;
   }
+
+  // DataForSEO had no rank (failed or rated nothing) — fall back to the free
+  // Ahrefs DR so the rating stays a real number whenever one source works.
+  try {
+    const dr = await getAhrefsDomainRating(domain);
+    if (dr != null) return { domain, rank: dr, source: "ahrefs", reason: null };
+  } catch (error) {
+    if (firstError === null) firstError = error;
+  }
+
+  return {
+    domain,
+    rank: null,
+    source: null,
+    reason:
+      firstError != null
+        ? errorMessage(firstError)
+        : "No rating for this domain yet — the Backlinks page refreshes it",
+  };
 }
 
 export const DomainService = {

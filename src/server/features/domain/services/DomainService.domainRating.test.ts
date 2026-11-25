@@ -2,11 +2,19 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { drizzle } from "drizzle-orm/sqlite-proxy";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const backlinksSummaryMock = vi.fn();
+const { backlinksSummaryMock, ahrefsRatingMock } = vi.hoisted(() => ({
+  backlinksSummaryMock: vi.fn(),
+  ahrefsRatingMock: vi.fn(),
+}));
 
 // The rating refresh reuses the Backlinks page's overview lookup; its
 // DataForSEO client and R2 cache are the network/billing boundary mocked here.
+// The Ahrefs DR fallback is mocked at the same boundary (it fetches and caches
+// in KV).
 vi.mock("cloudflare:workers", () => ({ env: {}, waitUntil: vi.fn() }));
+vi.mock("@/server/lib/ahrefs", () => ({
+  getAhrefsDomainRating: ahrefsRatingMock,
+}));
 vi.mock("@/server/lib/r2-cache", () => ({
   buildCacheKey: vi.fn(
     async (prefix: string, params: Record<string, unknown>) =>
@@ -93,6 +101,8 @@ beforeEach(() => {
       captured_at text NOT NULL
     );
   `);
+  // Ahrefs has no rating unless a test asks for one.
+  ahrefsRatingMock.mockResolvedValue(null);
 });
 
 describe("getProjectDomainRating", () => {
@@ -108,8 +118,14 @@ describe("getProjectDomainRating", () => {
       billingCustomer,
     );
 
-    expect(result).toEqual({ domain: "example.com", rank: 42 });
+    expect(result).toEqual({
+      domain: "example.com",
+      rank: 42,
+      source: "dataforseo",
+      reason: null,
+    });
     expect(backlinksSummaryMock).not.toHaveBeenCalled();
+    expect(ahrefsRatingMock).not.toHaveBeenCalled();
   });
 
   it("refreshes through the backlinks overview when the snapshot is for another domain", async () => {
@@ -125,18 +141,81 @@ describe("getProjectDomainRating", () => {
       billingCustomer,
     );
 
-    expect(result).toEqual({ domain: "example.com", rank: 77 });
+    expect(result).toEqual({
+      domain: "example.com",
+      rank: 77,
+      source: "dataforseo",
+      reason: null,
+    });
+    expect(ahrefsRatingMock).not.toHaveBeenCalled();
   });
 
-  it("returns a null rank when the refresh fails", async () => {
+  it("falls back to the Ahrefs DR when DataForSEO fails", async () => {
     backlinksSummaryMock.mockRejectedValue(new Error("no provider key"));
+    ahrefsRatingMock.mockResolvedValue(55);
 
     const result = await DomainService.getProjectDomainRating(
       { projectId: "project_123", domain: "example.com" },
       billingCustomer,
     );
 
-    expect(result).toEqual({ domain: "example.com", rank: null });
+    expect(result).toEqual({
+      domain: "example.com",
+      rank: 55,
+      source: "ahrefs",
+      reason: null,
+    });
+  });
+
+  it("falls back to the Ahrefs DR when DataForSEO has no rank for the site", async () => {
+    backlinksSummaryMock.mockResolvedValue({ rank: null });
+    ahrefsRatingMock.mockResolvedValue(55);
+
+    const result = await DomainService.getProjectDomainRating(
+      { projectId: "project_123", domain: "example.com" },
+      billingCustomer,
+    );
+
+    expect(result).toEqual({
+      domain: "example.com",
+      rank: 55,
+      source: "ahrefs",
+      reason: null,
+    });
+  });
+
+  it("reports the DataForSEO failure when both providers fail", async () => {
+    backlinksSummaryMock.mockRejectedValue(new Error("no provider key"));
+    ahrefsRatingMock.mockRejectedValue(new Error("Ahrefs down"));
+
+    const result = await DomainService.getProjectDomainRating(
+      { projectId: "project_123", domain: "example.com" },
+      billingCustomer,
+    );
+
+    expect(result).toEqual({
+      domain: "example.com",
+      rank: null,
+      source: null,
+      reason: "no provider key",
+    });
+  });
+
+  it("explains an empty rating when both providers have no data", async () => {
+    backlinksSummaryMock.mockResolvedValue({ rank: null });
+    ahrefsRatingMock.mockResolvedValue(null);
+
+    const result = await DomainService.getProjectDomainRating(
+      { projectId: "project_123", domain: "example.com" },
+      billingCustomer,
+    );
+
+    expect(result).toEqual({
+      domain: "example.com",
+      rank: null,
+      source: null,
+      reason: "No rating for this domain yet — the Backlinks page refreshes it",
+    });
   });
 
   it("returns a null rank without a project website", async () => {
@@ -145,6 +224,12 @@ describe("getProjectDomainRating", () => {
       billingCustomer,
     );
 
-    expect(result).toEqual({ domain: null, rank: null });
+    expect(result).toEqual({
+      domain: null,
+      rank: null,
+      source: null,
+      reason: null,
+    });
+    expect(ahrefsRatingMock).not.toHaveBeenCalled();
   });
 });
