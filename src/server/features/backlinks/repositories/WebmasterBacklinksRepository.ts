@@ -6,7 +6,9 @@ import {
   webmasterBacklinkSnapshots,
 } from "@/db/schema";
 
-type WebmasterBacklinkSource = "yandex_webmaster";
+// Webmasters whose link data lands in these tables. Bing Webmaster writes
+// through the Bing feature's service; Yandex through WebmasterBacklinksService.
+type WebmasterBacklinkSource = "yandex_webmaster" | "bing_webmaster";
 
 /** Upsert one dated count per history point. Re-collecting the same date
  *  refreshes the count and bumps capturedAt (the staleness marker). */

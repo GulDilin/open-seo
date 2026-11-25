@@ -3,6 +3,7 @@ import { googleConnectionOptions } from "@/client/features/integrations/googlePr
 import { createFileRoute } from "@tanstack/react-router";
 import { GoogleConnectionCard } from "@/client/features/integrations/GoogleConnectionCard";
 import { YandexConnectionCard } from "@/client/features/integrations/YandexConnectionCard";
+import { BingConnectionCard } from "@/client/features/bing/BingConnectionCard";
 import { CrawlerAccessSettings } from "@/client/features/settings/CrawlerAccessSettings";
 import { IndexNowSettings } from "@/client/features/settings/IndexNowSettings";
 
@@ -39,6 +40,10 @@ function ProjectIntegrationsRoute() {
 
       <section id="yandex-webmaster" className="scroll-mt-6">
         <YandexConnectionCard projectId={projectId} />
+      </section>
+
+      <section id="bing-webmaster" className="scroll-mt-6">
+        <BingConnectionCard projectId={projectId} />
       </section>
       <IndexNowSettings projectId={projectId} />
 

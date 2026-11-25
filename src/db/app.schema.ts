@@ -469,10 +469,10 @@ export const backlinkSnapshots = sqliteTable(
 );
 
 // External-link tracking sourced from connected webmaster tools
-// (Yandex Webmaster today — the Search Console API exposes no links data).
-// One row per (project, source, webmaster-reported date): the dated history
-// series doubles as the snapshot log, so a fresh collect both backfills
-// Yandex's history and appends the current count.
+// (Yandex Webmaster and Bing Webmaster — the Search Console API exposes no
+// links data). One row per (project, source, webmaster-reported date): the
+// dated history series doubles as the snapshot log, so a fresh collect both
+// backfills the webmaster's history and appends the current count.
 export const webmasterBacklinkSnapshots = sqliteTable(
   "webmaster_backlink_snapshots",
   {
@@ -480,7 +480,9 @@ export const webmasterBacklinkSnapshots = sqliteTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    source: text("source", { enum: ["yandex_webmaster"] }).notNull(),
+    source: text("source", {
+      enum: ["yandex_webmaster", "bing_webmaster"],
+    }).notNull(),
     // The date the webmaster reported the count FOR (UTC day).
     date: text("date").notNull(),
     linksTotalCount: integer("links_total_count").notNull(),
@@ -497,9 +499,10 @@ export const webmasterBacklinkSnapshots = sqliteTable(
 );
 
 // Sample external links a webmaster API exposes (source page → target page).
-// Yandex's samples carry no anchor text; kept as-is. Rows persist across
-// collects (firstSeenAt/lastSeenAt bracket observation) — disappearing from
-// Yandex's sample pool does not mean a link was lost, so no "lost" state.
+// Yandex's samples carry no anchor text; Bing's carry AnchorText but no
+// discovery date. Rows persist across collects (firstSeenAt/lastSeenAt bracket
+// observation) — disappearing from a webmaster's sample pool does not mean a
+// link was lost, so no "lost" state.
 export const webmasterBacklinkSamples = sqliteTable(
   "webmaster_backlink_samples",
   {
@@ -507,7 +510,9 @@ export const webmasterBacklinkSamples = sqliteTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    source: text("source", { enum: ["yandex_webmaster"] }).notNull(),
+    source: text("source", {
+      enum: ["yandex_webmaster", "bing_webmaster"],
+    }).notNull(),
     sourceUrl: text("source_url").notNull(),
     destinationUrl: text("destination_url").notNull(),
     // Nullable: the API may omit them for a given link.
