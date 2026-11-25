@@ -4,10 +4,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { DomainOverviewPage } from "@/client/features/domain/DomainOverviewPage";
-import {
-  DataForSeoRequiredBadge,
-  useSeoProviderSetup,
-} from "@/client/components/ProviderRequiredBadge";
+import { useSeoProviderSetup } from "@/client/components/ProviderRequiredBadge";
 import {
   DEFAULT_DOMAIN_KEYWORDS_PAGE_SIZE,
   domainSearchSchema,
@@ -61,15 +58,13 @@ function DomainOverviewRoute() {
   const projectMarket = useProjectMarket(projectId);
   const routeState = getDomainRouteState(search, projectMarket);
   // Domain research (traffic, keywords, pages) runs on DataForSEO; without
-  // its key every research query would fail server-side, so render the badge
-  // instead of the research UI. The project's own site cards do not need
-  // DataForSEO (SQI is first-party Webmaster data, the rating degrades to an
-  // honest dash), so the page is never empty.
+  // its key every research query would fail server-side, so render just the
+  // project's own cards — the rating falls back to Ahrefs and SQI is
+  // first-party Webmaster data, so that side of the page still works.
   const setup = useSeoProviderSetup();
   if (setup.data && !setup.data.dataforseo)
     return (
       <div className="space-y-3 px-4 py-4 md:px-6 md:py-6">
-        <DataForSeoRequiredBadge />
         <Card className="gap-0 py-0">
           <div className="px-4 pt-4 pb-3">
             <h2 className="text-lg font-semibold">Your website</h2>
@@ -86,19 +81,16 @@ function DomainOverviewRoute() {
     );
 
   return (
-    <div className="space-y-3">
-      <DataForSeoRequiredBadge />
-      <DomainOverviewPage
-        projectId={projectId}
-        onShowRecentSearches={() => {
-          void navigate({
-            search: () => ({}),
-            replace: true,
-          });
-        }}
-        navigate={navigate}
-        routeState={routeState}
-      />
-    </div>
+    <DomainOverviewPage
+      projectId={projectId}
+      onShowRecentSearches={() => {
+        void navigate({
+          search: () => ({}),
+          replace: true,
+        });
+      }}
+      navigate={navigate}
+      routeState={routeState}
+    />
   );
 }
