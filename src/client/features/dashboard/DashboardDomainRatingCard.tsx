@@ -5,7 +5,11 @@ import {
   DataForSeoRequiredBadge,
   useSeoProviderSetup,
 } from "@/client/components/ProviderRequiredBadge";
-import { useProjectDomainRating } from "@/client/features/domain/hooks/useProjectDomainRating";
+import { getStandardErrorMessage } from "@/client/lib/error-messages";
+import {
+  DOMAIN_RATING_SOURCE_LABELS,
+  useProjectDomainRating,
+} from "@/client/features/domain/hooks/useProjectDomainRating";
 import { useProjectSqi } from "@/client/features/domain/hooks/useProjectSqi";
 
 function Stat({
@@ -27,9 +31,10 @@ function Stat({
 }
 
 /**
- * The project website's authority scores side by side: DataForSEO's domain
- * rating and Yandex's SQI (ИКС). Each stat degrades to an honest dash with
- * the reason — the rating needs the DataForSEO key, SQI needs a connected
+ * The project website's authority scores side by side: the domain rating
+ * (DataForSEO's backlinks rank with the free Ahrefs DR as a fallback) and
+ * Yandex's SQI (ИКС). Each stat degrades to an honest dash with the reason —
+ * the rating needs a working DataForSEO key or Ahrefs, SQI needs a connected
  * Yandex Webmaster site.
  */
 export function DashboardDomainRatingCard({
@@ -43,18 +48,23 @@ export function DashboardDomainRatingCard({
   const rating = ratingQuery.data;
   const sqi = sqiQuery.data;
 
-  // The rating needs DataForSEO; without its key the lookup returns null —
-  // say so instead of an unexplained dash.
   const noDataForSeo = setup.data != null && !setup.data.dataforseo;
+  // The service names the provider it used, or the reason it could not rate
+  // the site — no guessing here.
   const ratingReason = !rating
     ? null
-    : rating.domain == null
-      ? "Add your website in Project settings"
-      : rating.rank == null && noDataForSeo
-        ? "Needs the DataForSEO key"
-        : rating.rank == null
-          ? "No rating yet — the Backlinks page refreshes it"
-          : rating.domain;
+    : rating.rank != null
+      ? [
+          rating.domain,
+          rating.source && DOMAIN_RATING_SOURCE_LABELS[rating.source],
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : rating.domain == null
+        ? "Add your website in Project settings"
+        : ((rating.reason
+            ? getStandardErrorMessage(new Error(rating.reason))
+            : null) ?? rating.domain);
   const sqiReason = !sqi
     ? null
     : sqi.connected
