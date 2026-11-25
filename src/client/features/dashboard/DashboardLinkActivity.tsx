@@ -221,17 +221,14 @@ function WebmasterLinkActivity({ projectId }: { projectId: string }) {
       <QueryState query={query} errorFallback="Could not load new links">
         {(data) =>
           data.connected ? (
-            data.yandex.length ? (
-              <div className="space-y-3">
-                <YandexSourceNote collectError={data.collectError} />
+            <>
+              <YandexSourceNote collectError={data.collectError} />
+              {data.yandex.length ? (
                 <YandexLinksTable rows={data.yandex.slice(0, 5)} />
-              </div>
-            ) : (
-              <>
-                <YandexSourceNote collectError={data.collectError} />
+              ) : (
                 <NewLinksEmptyState projectId={projectId} />
-              </>
-            )
+              )}
+            </>
           ) : (
             <WebmasterLinksUnavailable
               unavailableReason={data.unavailableReason}
