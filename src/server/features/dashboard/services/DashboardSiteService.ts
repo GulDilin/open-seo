@@ -84,7 +84,10 @@ async function getWebmasterLinks(projectId: string) {
     fromDate: from,
     limit: 25,
   });
-  return { ...result, yandex: result.samples.map(toYandexRow) };
+  // Only the mapped rows cross the boundary: raw samples and mapped rows would
+  // double the payload for the same data.
+  const { samples, ...state } = result;
+  return { ...state, yandex: samples.map(toYandexRow) };
 }
 
 async function getBacklinks(

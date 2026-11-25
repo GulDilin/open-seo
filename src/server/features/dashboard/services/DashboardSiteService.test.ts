@@ -230,15 +230,23 @@ it("degrades the no-DataForSEO widgets to Yandex samples without a DataForSEO re
       fromDate: "2026-10-21",
       limit: 25,
     });
-    expect(result).toMatchObject({
+    // Full contract: raw samples never cross to the client, only mapped rows.
+    expect(result).toEqual({
       connected: true,
+      unavailableReason: null,
+      collectError: null,
       yandex: [
         {
           source: "yandex_webmaster",
           domainFrom: "referring.example",
           urlFrom: "https://referring.example/page",
           urlTo: "https://site.example/",
+          anchor: null,
+          isDofollow: null,
+          domainFromRank: null,
+          spamScore: null,
           firstSeen: "2026-11-18",
+          lastSeen: "2026-11-18",
         },
       ],
     });
