@@ -183,7 +183,16 @@ async function fetchTokens(params: Record<string, string>) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(params),
   });
-  if (!response.ok) return null;
+  if (!response.ok) {
+    // Google names the exact grant failure here ("Token has been expired or
+    // revoked" for the 7-day Testing-mode window, "revoked by the user" for a
+    // manual revoke). Without it every dead grant looks identical.
+    console.error("google_oauth_token_request_rejected", {
+      status: response.status,
+      body: (await response.text()).slice(0, 300),
+    });
+    return null;
+  }
   return googleTokenResponseSchema.parse(await response.json());
 }
 
