@@ -55,7 +55,7 @@ describe("getAhrefsDomainRating", () => {
     expect(sent.auth).toBe("Bearer ahrefs-key-1");
   });
 
-  it("treats a DR of 0 as no rating and caches it", async () => {
+  it("reports a DR of 0 as a real rating and caches it", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(() =>
@@ -64,8 +64,8 @@ describe("getAhrefsDomainRating", () => {
         ),
       ),
     );
-    expect(await getAhrefsDomainRating("unknown.example")).toBeNull();
-    expect(kvStore.get("ahrefs-dr:unknown.example")).toBe("null");
+    expect(await getAhrefsDomainRating("unknown.example")).toBe(0);
+    expect(kvStore.get("ahrefs-dr:unknown.example")).toBe("0");
     // A second read is served from the cache, not the API.
     const fetchSpy = vi.fn(() =>
       Promise.resolve(
@@ -73,7 +73,15 @@ describe("getAhrefsDomainRating", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchSpy);
-    expect(await getAhrefsDomainRating("unknown.example")).toBeNull();
+    expect(await getAhrefsDomainRating("unknown.example")).toBe(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("reads legacy cached 'null' entries (the old DR 0 mapping) as 0", async () => {
+    kvStore.set("ahrefs-dr:legacy.example", "null");
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    expect(await getAhrefsDomainRating("legacy.example")).toBe(0);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

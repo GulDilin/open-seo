@@ -6,8 +6,9 @@ import { getOptionalEnvValue } from "./runtime-env";
  * Ahrefs publishes a free Domain Rating lookup that still requires an APIv3
  * key (free to generate, no units consumed — keyless requests get a 403).
  * Shared by the Backlinks table's on-demand column and the domain rating's
- * fallback — no billing, no stored data. Every result (a DR, or `null` when
- * Ahrefs has no rating) is cached in KV for a day so repeat lookups are free.
+ * fallback — no billing, no stored data. Every result (a DR, including a
+ * legitimate 0 for a domain with no backlink profile yet) is cached in KV
+ * for a day so repeat lookups are free.
  */
 const AHREFS_DR_ENDPOINT =
   "https://api.ahrefs.com/v3/public/domain-rating-free";
@@ -22,12 +23,8 @@ const ahrefsResponseSchema = z.object({
 });
 
 /** Cache-first DR lookup for a single normalized domain. Throws on failure. */
-export async function getAhrefsDomainRating(
-  domain: string,
-): Promise<number | null> {
+export async function getAhrefsDomainRating(domain: string): Promise<number> {
   const cacheKey = `${CACHE_PREFIX}${domain}`;
-  // KV returns JS `null` only when the key is absent; a cached "no rating" is
-  // stored as the string "null", so cache hits (including nulls) skip the fetch.
   const cached = await env.KV.get(cacheKey);
   if (cached !== null) return parseCachedRating(cached);
 
@@ -38,7 +35,7 @@ export async function getAhrefsDomainRating(
   return dr;
 }
 
-async function fetchDomainRating(domain: string): Promise<number | null> {
+async function fetchDomainRating(domain: string): Promise<number> {
   const apiKey = await getOptionalEnvValue("AHREFS_API_KEY");
   if (!apiKey) {
     // Named, not a bare 403: this error becomes the rating's visible reason.
@@ -60,18 +57,19 @@ async function fetchDomainRating(domain: string): Promise<number | null> {
     throw new Error("Ahrefs DR lookup returned an unexpected response");
   }
 
-  // Ahrefs returns 200 with DR 0 for domains it has no rating for (new or
-  // unknown), so treat 0 as "no rating" — the UI renders it as "—".
-  const dr = parsed.data.domain_rating.domain_rating;
-  return dr > 0 ? dr : null;
+  // DR 0 is a real rating — a domain with no backlink profile in Ahrefs' index
+  // — and the UI displays it as 0, not as an absent rating.
+  return parsed.data.domain_rating.domain_rating;
 }
 
-function parseCachedRating(raw: string): number | null {
+function parseCachedRating(raw: string): number {
   try {
     const value: unknown = JSON.parse(raw);
-    // Mirror fetchDomainRating: a DR of 0 means "no rating", so render it as "—".
-    return typeof value === "number" && value > 0 ? value : null;
+    // Legacy entries stored DR 0 as JSON "null" (the old "no rating" mapping);
+    // under the current semantics 0 is a real rating, so translate them.
+    if (value === null) return 0;
+    return typeof value === "number" ? value : 0;
   } catch {
-    return null;
+    return 0;
   }
 }

@@ -231,12 +231,11 @@ describe("getProjectDomainRating", () => {
     });
   });
 
-  it("does not blame a failed provider when the other rated the domain at zero", async () => {
-    // Ahrefs answered (DR 0, domain unknown to its index); the DataForSEO
-    // error is about a source the deployment opted out of, not why the card
-    // is empty.
+  it("reports a zero Ahrefs DR as a real rating, not an absence", async () => {
+    // DataForSEO failed, but the Ahrefs DR of 0 is an honest answer: a domain
+    // with no backlink profile in Ahrefs' index yet.
     backlinksSummaryMock.mockRejectedValue(new Error("no provider key"));
-    ahrefsRatingMock.mockResolvedValue(null);
+    ahrefsRatingMock.mockResolvedValue(0);
 
     const result = await DomainService.getProjectDomainRating(
       { projectId: "project_123", domain: "example.com" },
@@ -245,15 +244,17 @@ describe("getProjectDomainRating", () => {
 
     expect(result).toEqual({
       domain: "example.com",
-      rank: null,
-      source: null,
-      reason: "No rating for this domain yet — the Backlinks page refreshes it",
+      rank: 0,
+      source: "ahrefs",
+      reason: null,
     });
   });
 
-  it("explains an empty rating when both providers have no data", async () => {
+  it("does not blame a failed provider when the other answered with no rank", async () => {
+    // DataForSEO rated the domain at nothing; the Ahrefs error is about a
+    // fallback that never answered, not why the card is empty.
     backlinksSummaryMock.mockResolvedValue({ rank: null });
-    ahrefsRatingMock.mockResolvedValue(null);
+    ahrefsRatingMock.mockRejectedValue(new Error("Ahrefs down"));
 
     const result = await DomainService.getProjectDomainRating(
       { projectId: "project_123", domain: "example.com" },
