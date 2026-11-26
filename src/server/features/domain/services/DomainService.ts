@@ -338,6 +338,11 @@ async function getProjectSqi(input: {
 /** A snapshot older than this is considered stale and refreshed on demand. */
 const DOMAIN_RATING_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
+/** Shown when the providers answered but rated the domain at nothing — a real
+ *  state for domains absent from an index, not a configuration failure. */
+const NO_RATING_REASON =
+  "No rating for this domain yet — the Backlinks page refreshes it";
+
 /** Where the displayed domain rating came from, so the UI can label it. */
 type DomainRatingSource = "dataforseo" | "ahrefs";
 
@@ -412,9 +417,14 @@ async function getProjectDomainRating(
         { source: "ahrefs", lookup: () => getAhrefsDomainRating(domain) },
       ];
 
+  // A provider that answered `null` rated the domain at zero (unknown to its
+  // index) — an answer, not a failure. Its neutral "no rating yet" beats the
+  // other provider's error, which would wrongly imply a config problem.
+  let answeredNoRating = false;
   for (const provider of providers) {
     try {
       const rank = await provider.lookup();
+      answeredNoRating = true;
       if (rank != null) {
         return { domain, rank, source: provider.source, reason: null };
       }
@@ -427,10 +437,11 @@ async function getProjectDomainRating(
     domain,
     rank: null,
     source: null,
-    reason:
-      firstError != null
+    reason: answeredNoRating
+      ? NO_RATING_REASON
+      : firstError != null
         ? errorMessage(firstError)
-        : "No rating for this domain yet — the Backlinks page refreshes it",
+        : NO_RATING_REASON,
   };
 }
 

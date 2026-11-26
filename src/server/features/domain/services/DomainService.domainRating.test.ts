@@ -231,6 +231,26 @@ describe("getProjectDomainRating", () => {
     });
   });
 
+  it("does not blame a failed provider when the other rated the domain at zero", async () => {
+    // Ahrefs answered (DR 0, domain unknown to its index); the DataForSEO
+    // error is about a source the deployment opted out of, not why the card
+    // is empty.
+    backlinksSummaryMock.mockRejectedValue(new Error("no provider key"));
+    ahrefsRatingMock.mockResolvedValue(null);
+
+    const result = await DomainService.getProjectDomainRating(
+      { projectId: "project_123", domain: "example.com" },
+      billingCustomer,
+    );
+
+    expect(result).toEqual({
+      domain: "example.com",
+      rank: null,
+      source: null,
+      reason: "No rating for this domain yet — the Backlinks page refreshes it",
+    });
+  });
+
   it("explains an empty rating when both providers have no data", async () => {
     backlinksSummaryMock.mockResolvedValue({ rank: null });
     ahrefsRatingMock.mockResolvedValue(null);
