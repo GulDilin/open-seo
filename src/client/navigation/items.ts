@@ -207,3 +207,7 @@ export function getProjectNavGroups(projectId: string) {
 export const dataforseoHelpLinkOptions = linkOptions({
   to: "/help/dataforseo-api-key",
 });
+
+export const bingHelpLinkOptions = linkOptions({
+  to: "/help/bing-webmaster-api-key",
+});

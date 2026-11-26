@@ -33,6 +33,7 @@ import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiPrivacyRegionRouteImport } from './routes/api/privacy-region'
 import { Route as RReportIdRouteImport } from './routes/r/$reportId'
 import { Route as AppBillingFixPaymentRouteImport } from './routes/_app/billing_.fix-payment'
+import { Route as AppHelpBingWebmasterApiKeyRouteImport } from './routes/_app/help/bing-webmaster-api-key'
 import { Route as AppHelpDataforseoApiKeyRouteImport } from './routes/_app/help/dataforseo-api-key'
 import { Route as AppHelpOpenrouterApiKeyRouteImport } from './routes/_app/help/openrouter-api-key'
 import { Route as AppPProjectIdRouteRouteImport } from './routes/_app/p/$projectId/route'
@@ -200,6 +201,12 @@ const AppBillingFixPaymentRoute = AppBillingFixPaymentRouteImport.update({
   path: '/billing/fix-payment',
   getParentRoute: () => AppRouteRoute,
 } as any)
+const AppHelpBingWebmasterApiKeyRoute =
+  AppHelpBingWebmasterApiKeyRouteImport.update({
+    id: '/help/bing-webmaster-api-key',
+    path: '/help/bing-webmaster-api-key',
+    getParentRoute: () => AppRouteRoute,
+  } as any)
 const AppHelpDataforseoApiKeyRoute = AppHelpDataforseoApiKeyRouteImport.update({
   id: '/help/dataforseo-api-key',
   path: '/help/dataforseo-api-key',
@@ -480,6 +487,7 @@ export interface FileRoutesByFullPath {
   '/r/$reportId': typeof RReportIdRoute
   '/p/$projectId': typeof AppPProjectIdRouteRouteWithChildren
   '/billing/fix-payment': typeof AppBillingFixPaymentRoute
+  '/help/bing-webmaster-api-key': typeof AppHelpBingWebmasterApiKeyRoute
   '/help/dataforseo-api-key': typeof AppHelpDataforseoApiKeyRoute
   '/help/openrouter-api-key': typeof AppHelpOpenrouterApiKeyRoute
   '/settings/organization': typeof AppSettingsOrganizationRoute
@@ -548,6 +556,7 @@ export interface FileRoutesByTo {
   '/api/privacy-region': typeof ApiPrivacyRegionRoute
   '/r/$reportId': typeof RReportIdRoute
   '/billing/fix-payment': typeof AppBillingFixPaymentRoute
+  '/help/bing-webmaster-api-key': typeof AppHelpBingWebmasterApiKeyRoute
   '/help/dataforseo-api-key': typeof AppHelpDataforseoApiKeyRoute
   '/help/openrouter-api-key': typeof AppHelpOpenrouterApiKeyRoute
   '/settings/organization': typeof AppSettingsOrganizationRoute
@@ -617,6 +626,7 @@ export interface FileRoutesById {
   '/_app/': typeof AppIndexRoute
   '/_app/p/$projectId': typeof AppPProjectIdRouteRouteWithChildren
   '/_app/billing_/fix-payment': typeof AppBillingFixPaymentRoute
+  '/_app/help/bing-webmaster-api-key': typeof AppHelpBingWebmasterApiKeyRoute
   '/_app/help/dataforseo-api-key': typeof AppHelpDataforseoApiKeyRoute
   '/_app/help/openrouter-api-key': typeof AppHelpOpenrouterApiKeyRoute
   '/_app/settings/organization': typeof AppSettingsOrganizationRoute
@@ -689,6 +699,7 @@ export interface FileRouteTypes {
     | '/r/$reportId'
     | '/p/$projectId'
     | '/billing/fix-payment'
+    | '/help/bing-webmaster-api-key'
     | '/help/dataforseo-api-key'
     | '/help/openrouter-api-key'
     | '/settings/organization'
@@ -757,6 +768,7 @@ export interface FileRouteTypes {
     | '/api/privacy-region'
     | '/r/$reportId'
     | '/billing/fix-payment'
+    | '/help/bing-webmaster-api-key'
     | '/help/dataforseo-api-key'
     | '/help/openrouter-api-key'
     | '/settings/organization'
@@ -825,6 +837,7 @@ export interface FileRouteTypes {
     | '/_app/'
     | '/_app/p/$projectId'
     | '/_app/billing_/fix-payment'
+    | '/_app/help/bing-webmaster-api-key'
     | '/_app/help/dataforseo-api-key'
     | '/_app/help/openrouter-api-key'
     | '/_app/settings/organization'
@@ -1064,6 +1077,13 @@ declare module '@tanstack/react-router' {
       path: '/billing/fix-payment'
       fullPath: '/billing/fix-payment'
       preLoaderRoute: typeof AppBillingFixPaymentRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/_app/help/bing-webmaster-api-key': {
+      id: '/_app/help/bing-webmaster-api-key'
+      path: '/help/bing-webmaster-api-key'
+      fullPath: '/help/bing-webmaster-api-key'
+      preLoaderRoute: typeof AppHelpBingWebmasterApiKeyRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/_app/help/dataforseo-api-key': {
@@ -1553,6 +1573,7 @@ interface AppRouteRouteChildren {
   AppIndexRoute: typeof AppIndexRoute
   AppPProjectIdRouteRoute: typeof AppPProjectIdRouteRouteWithChildren
   AppBillingFixPaymentRoute: typeof AppBillingFixPaymentRoute
+  AppHelpBingWebmasterApiKeyRoute: typeof AppHelpBingWebmasterApiKeyRoute
   AppHelpDataforseoApiKeyRoute: typeof AppHelpDataforseoApiKeyRoute
   AppHelpOpenrouterApiKeyRoute: typeof AppHelpOpenrouterApiKeyRoute
 }
@@ -1566,6 +1587,7 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppIndexRoute: AppIndexRoute,
   AppPProjectIdRouteRoute: AppPProjectIdRouteRouteWithChildren,
   AppBillingFixPaymentRoute: AppBillingFixPaymentRoute,
+  AppHelpBingWebmasterApiKeyRoute: AppHelpBingWebmasterApiKeyRoute,
   AppHelpDataforseoApiKeyRoute: AppHelpDataforseoApiKeyRoute,
   AppHelpOpenrouterApiKeyRoute: AppHelpOpenrouterApiKeyRoute,
 }

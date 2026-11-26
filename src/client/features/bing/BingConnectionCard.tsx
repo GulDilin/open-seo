@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
@@ -9,6 +10,7 @@ import { QueryError } from "@/client/components/QueryState";
 import { CardShell } from "@/client/components/CardShell";
 import { PermissionHint } from "@/client/components/PermissionHint";
 import { getStandardErrorMessage } from "@/client/lib/error-messages";
+import { bingHelpLinkOptions } from "@/client/navigation/items";
 import {
   disconnectBing,
   getBingConnection,
@@ -204,7 +206,13 @@ function ApiKeyForm({
     >
       <p className="text-sm text-muted-foreground">
         Paste the API key Bing Webmaster generated (Settings → API access) to
-        list its sites.
+        list its sites.{" "}
+        <Link
+          {...bingHelpLinkOptions}
+          className="font-medium text-primary underline-offset-4 hover:underline"
+        >
+          Setup guide
+        </Link>
       </p>
       <Input
         type="password"
