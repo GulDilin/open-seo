@@ -1,11 +1,13 @@
 import { env } from "cloudflare:workers";
 import { z } from "zod";
+import { getOptionalEnvValue } from "./runtime-env";
 
 /**
- * Ahrefs publishes a free, keyless Domain Rating lookup. Shared by the
- * Backlinks table's on-demand column and the domain rating's fallback — no
- * billing, no stored data. Every result (a DR, or `null` when Ahrefs has no
- * rating) is cached in KV for a day so repeat lookups are free.
+ * Ahrefs publishes a free Domain Rating lookup that still requires an APIv3
+ * key (free to generate, no units consumed — keyless requests get a 403).
+ * Shared by the Backlinks table's on-demand column and the domain rating's
+ * fallback — no billing, no stored data. Every result (a DR, or `null` when
+ * Ahrefs has no rating) is cached in KV for a day so repeat lookups are free.
  */
 const AHREFS_DR_ENDPOINT =
   "https://api.ahrefs.com/v3/public/domain-rating-free";
@@ -37,9 +39,17 @@ export async function getAhrefsDomainRating(
 }
 
 async function fetchDomainRating(domain: string): Promise<number | null> {
+  const apiKey = await getOptionalEnvValue("AHREFS_API_KEY");
+  if (!apiKey) {
+    // Named, not a bare 403: this error becomes the rating's visible reason.
+    throw new Error("Ahrefs API key is not configured (AHREFS_API_KEY)");
+  }
   const response = await fetch(
     `${AHREFS_DR_ENDPOINT}?target=${encodeURIComponent(domain)}`,
-    { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+    {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    },
   );
   if (!response.ok) {
     throw new Error(`Ahrefs DR lookup failed with status ${response.status}`);
