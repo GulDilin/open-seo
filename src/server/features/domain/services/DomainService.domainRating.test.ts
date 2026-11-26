@@ -2,16 +2,22 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { drizzle } from "drizzle-orm/sqlite-proxy";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { backlinksSummaryMock, ahrefsRatingMock } = vi.hoisted(() => ({
-  backlinksSummaryMock: vi.fn(),
-  ahrefsRatingMock: vi.fn(),
-}));
+const { backlinksSummaryMock, ahrefsRatingMock, workersEnv } = vi.hoisted(
+  () => ({
+    backlinksSummaryMock: vi.fn(),
+    ahrefsRatingMock: vi.fn(),
+    workersEnv: {} as Record<string, unknown>,
+  }),
+);
 
 // The rating refresh reuses the Backlinks page's overview lookup; its
 // DataForSEO client and R2 cache are the network/billing boundary mocked here.
 // The Ahrefs DR fallback is mocked at the same boundary (it fetches and caches
 // in KV).
-vi.mock("cloudflare:workers", () => ({ env: {}, waitUntil: vi.fn() }));
+vi.mock("cloudflare:workers", () => ({
+  env: workersEnv,
+  waitUntil: vi.fn(),
+}));
 vi.mock("@/server/lib/ahrefs", () => ({
   getAhrefsDomainRating: ahrefsRatingMock,
 }));
@@ -165,6 +171,30 @@ describe("getProjectDomainRating", () => {
       source: "ahrefs",
       reason: null,
     });
+  });
+
+  it("leads with the Ahrefs DR when the deployment configured its key", async () => {
+    workersEnv.AHREFS_API_KEY = "ahrefs-key";
+    backlinksSummaryMock.mockRejectedValue(
+      new Error("must not be reached while Ahrefs answers"),
+    );
+    ahrefsRatingMock.mockResolvedValue(55);
+    try {
+      const result = await DomainService.getProjectDomainRating(
+        { projectId: "project_123", domain: "example.com" },
+        billingCustomer,
+      );
+
+      expect(result).toEqual({
+        domain: "example.com",
+        rank: 55,
+        source: "ahrefs",
+        reason: null,
+      });
+      expect(backlinksSummaryMock).not.toHaveBeenCalled();
+    } finally {
+      delete workersEnv.AHREFS_API_KEY;
+    }
   });
 
   it("falls back to the Ahrefs DR when DataForSEO has no rank for the site", async () => {

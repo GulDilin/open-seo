@@ -1,5 +1,6 @@
 import { waitUntil } from "cloudflare:workers";
 import { getAhrefsDomainRating } from "@/server/lib/ahrefs";
+import { getOptionalEnvValue } from "@/server/lib/runtime-env";
 import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
 import { z } from "zod";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
@@ -382,35 +383,44 @@ async function getProjectDomainRating(
     return { domain, rank: snapshot.rank, source: "dataforseo", reason: null };
   }
 
-  // The first provider failure wins: DataForSEO is the primary source, so its
-  // error is the more actionable one to surface.
+  // The first provider failure wins: whichever source the deployment opted
+  // into is the more actionable one to surface.
   let firstError: unknown = null;
-  try {
+  // Ahrefs leads when the operator configured its free APIv3 key (deployments
+  // that deliberately skip DataForSEO); otherwise DataForSEO keeps the lead
+  // and Ahrefs covers its gaps. Order follows configuration, not taste.
+  const ahrefsFirst = (await getOptionalEnvValue("AHREFS_API_KEY")) != null;
+  const dfsLookup = async (): Promise<number | null> => {
     // Whole site, subdomains included — the same target snapshots were
     // captured for. The overview is R2-cached, shared with the Backlinks page.
     const { overview } = await BacklinksService.profileOverview(
       { target: domain, scope: "subdomains" },
       billingCustomer,
     );
-    if (overview.summary.rank != null) {
-      return {
-        domain,
-        rank: overview.summary.rank,
-        source: "dataforseo",
-        reason: null,
-      };
-    }
-  } catch (error) {
-    firstError = error;
-  }
+    return overview.summary.rank;
+  };
+  const providers: Array<{
+    source: DomainRatingSource;
+    lookup: () => Promise<number | null>;
+  }> = ahrefsFirst
+    ? [
+        { source: "ahrefs", lookup: () => getAhrefsDomainRating(domain) },
+        { source: "dataforseo", lookup: dfsLookup },
+      ]
+    : [
+        { source: "dataforseo", lookup: dfsLookup },
+        { source: "ahrefs", lookup: () => getAhrefsDomainRating(domain) },
+      ];
 
-  // DataForSEO had no rank (failed or rated nothing) — fall back to the free
-  // Ahrefs DR so the rating stays a real number whenever one source works.
-  try {
-    const dr = await getAhrefsDomainRating(domain);
-    if (dr != null) return { domain, rank: dr, source: "ahrefs", reason: null };
-  } catch (error) {
-    if (firstError === null) firstError = error;
+  for (const provider of providers) {
+    try {
+      const rank = await provider.lookup();
+      if (rank != null) {
+        return { domain, rank, source: provider.source, reason: null };
+      }
+    } catch (error) {
+      if (firstError === null) firstError = error;
+    }
   }
 
   return {
