@@ -16,6 +16,7 @@ import {
   updateRankTrackingConfig,
 } from "@/serverFunctions/rank-tracking";
 import { devicesLabel, scheduleLabel } from "@/shared/rank-tracking";
+import { SEARCH_ENGINE_LABELS } from "@/shared/search-engines";
 import { formatNextCheck } from "./scheduleTime";
 import {
   formatLocationLabel,
@@ -257,6 +258,7 @@ function DomainRow({
       <div className="min-w-0 flex-1 pointer-events-none">
         <p className="font-medium truncate">{summary.domain}</p>
         <p className="text-xs text-muted-foreground">
+          {SEARCH_ENGINE_LABELS[summary.searchEngine]} &middot;{" "}
           {summary.locationName
             ? formatLocationLabel(summary.locationName, 2)
             : (LOCATIONS[summary.locationCode] ?? "US")}{" "}
